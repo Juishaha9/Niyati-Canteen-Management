@@ -1,0 +1,12 @@
+.env
+/public/assets/app.js
+/public/assets/app.css
+/public/uploads/
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/sessions/*
+!/storage/sessions/.gitkeep
+/storage/uploads/menu/*
+!/storage/uploads/menu/.gitkeep
+node_modules/
+dist/

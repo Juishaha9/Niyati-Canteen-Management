@@ -1,0 +1,30 @@
+USE niyati_canteen;
+INSERT INTO roles(code,name) VALUES ('ADMIN','Administrator'),('MANAGER','Manager'),('WAITER','Waiter');
+-- Login is by email. Default admin: admin123@gmail.com / Niyati@2026
+-- Create a new hash with `php -r "echo password_hash('YourPassword', PASSWORD_DEFAULT);"` and replace this before importing in production.
+INSERT INTO users(role_id,email,display_name,password_hash) VALUES (1,'admin123@gmail.com','Administrator','$2y$10$js1yYwI4w/XhAiPbJ/panePafNiGqxdpCqCdcR3LeOwbQN5sPKg1e');
+INSERT INTO menu_categories(name,sort_order) VALUES ('Tea & Coffee',10),('Breakfast',20),('South Indian',30),('Snacks',40),('Maharashtrian',50),('Meals',60),('Drinks',70),('Chinese',80),('Specials',90);
+INSERT INTO canteen_tables(table_name,kind,sort_order) VALUES ('Table 1','TABLE',1),('Table 2','TABLE',2),('Table 3','TABLE',3),('Table 4','TABLE',4),('Table 5','TABLE',5),('Table 6','TABLE',6),('Table 7','TABLE',7),('Table 8','TABLE',8),('Table 9','TABLE',9),('Table 10','TABLE',10);
+INSERT INTO canteen_tables(table_name,kind,sort_order) VALUES ('Parcel 1','PARCEL',1),('Parcel 2','PARCEL',2),('Parcel 3','PARCEL',3),('Parcel 4','PARCEL',4),('Parcel 5','PARCEL',5),('Parcel 6','PARCEL',6),('Parcel 7','PARCEL',7),('Parcel 8','PARCEL',8),('Parcel 9','PARCEL',9),('Parcel 10','PARCEL',10);
+INSERT INTO settings(setting_key,setting_value) VALUES ('canteen_name','Niyati Canteen'),('address','Bus Stand'),('phone',''),('gst_number',''),('bill_footer','Thank you. Visit again.'),('currency_symbol','₹'),
+ ('business_name',''),('email',''),('logo_path',''),
+ ('order_number_format','ORD-{seq}'),('order_number_auto','1'),('allow_order_cancellation','1'),('require_cancellation_reason','1'),('auto_free_table_after_completion','1'),
+ ('bill_number_format','BILL-{seq}'),('bill_number_auto','1'),('payment_methods','CASH,UPI'),('show_logo_on_bill','1'),('show_waiter_name','1'),('show_table_number','1'),('show_thank_you_message','1'),('thank_you_message','Thank you for visiting Niyati Canteen!'),
+ ('default_order_status','DRAFT'),('default_table_status','AVAILABLE'),('confirm_cancel_order','1'),('confirm_cancel_bill','1'),('confirm_disable_user','1');
+INSERT INTO permissions(code,name,sort_order) VALUES
+ ('dashboard','Dashboard',10),('menu','Menu Management',20),('categories','Category Management',30),('users','User Management',40),('reports','Reports',50),
+ ('cancel_orders','Cancel Orders / Bills',80),('cancelled','Cancelled Bills History',90),
+ ('modified','Modified Bills History',100),('audits','Audit History',110),('settings','Settings',120);
+INSERT INTO menu_items(category_id,name,description,price,sort_order) VALUES
+((SELECT id FROM menu_categories WHERE name='Tea & Coffee'),'Tea',NULL,10,1),((SELECT id FROM menu_categories WHERE name='Tea & Coffee'),'Special Tea',NULL,20,2),((SELECT id FROM menu_categories WHERE name='Tea & Coffee'),'Coffee',NULL,25,3),((SELECT id FROM menu_categories WHERE name='Tea & Coffee'),'Milk',NULL,20,4),
+((SELECT id FROM menu_categories WHERE name='Breakfast'),'Pohe',NULL,25,1),((SELECT id FROM menu_categories WHERE name='Breakfast'),'Upit',NULL,30,2),((SELECT id FROM menu_categories WHERE name='Breakfast'),'Sheera',NULL,30,3),((SELECT id FROM menu_categories WHERE name='Breakfast'),'Kurma Puri',NULL,50,4),
+((SELECT id FROM menu_categories WHERE name='Maharashtrian'),'Kolhapuri Misal',NULL,50,1),((SELECT id FROM menu_categories WHERE name='Maharashtrian'),'Vada Pav',NULL,20,2),((SELECT id FROM menu_categories WHERE name='Maharashtrian'),'Dahi Vada',NULL,60,3),((SELECT id FROM menu_categories WHERE name='Maharashtrian'),'Kat Vada',NULL,50,4),((SELECT id FROM menu_categories WHERE name='Maharashtrian'),'Mirchi Bajji',NULL,30,5),((SELECT id FROM menu_categories WHERE name='Maharashtrian'),'Mysore Bajji',NULL,40,6),
+((SELECT id FROM menu_categories WHERE name='South Indian'),'Idli Sambar',NULL,30,1),((SELECT id FROM menu_categories WHERE name='South Indian'),'Masala Dosa',NULL,50,2),((SELECT id FROM menu_categories WHERE name='South Indian'),'Plain Dosa',NULL,50,3),((SELECT id FROM menu_categories WHERE name='South Indian'),'Sponge Dosa',NULL,50,4),((SELECT id FROM menu_categories WHERE name='South Indian'),'Onion Uttapam',NULL,60,5),((SELECT id FROM menu_categories WHERE name='South Indian'),'Tomato Omelette',NULL,65,6),((SELECT id FROM menu_categories WHERE name='South Indian'),'Medu Vada Sambar',NULL,50,7),((SELECT id FROM menu_categories WHERE name='South Indian'),'Paper Dosa',NULL,70,8),((SELECT id FROM menu_categories WHERE name='South Indian'),'Idli Vada Sambar',NULL,60,9),
+((SELECT id FROM menu_categories WHERE name='Meals'),'Rice Plate','2 Chapati / Rice, Bhaji, Aamti, Lonche, Taak, Papad, Kanda-Limbu',80,1),((SELECT id FROM menu_categories WHERE name='Meals'),'Jhunka Bhakri','2 Bhakri, Jhunka, Kanda-Limbu',50,2),((SELECT id FROM menu_categories WHERE name='Meals'),'Shalu Khichdi',NULL,35,3),
+((SELECT id FROM menu_categories WHERE name='Drinks'),'Tak',NULL,15,1),((SELECT id FROM menu_categories WHERE name='Drinks'),'Lassi',NULL,30,2),
+((SELECT id FROM menu_categories WHERE name='Chinese'),'Veg Manchurian',NULL,40,1),((SELECT id FROM menu_categories WHERE name='Chinese'),'Veg Noodles',NULL,40,2),((SELECT id FROM menu_categories WHERE name='Chinese'),'Pulav',NULL,50,3),
+((SELECT id FROM menu_categories WHERE name='Specials'),'Samosa','Price to be configured',NULL,1),((SELECT id FROM menu_categories WHERE name='Drinks'),'Paani',NULL,NULL,3),((SELECT id FROM menu_categories WHERE name='Drinks'),'Cold Drinks',NULL,NULL,4);
+INSERT INTO menu_item_variants(menu_item_id,name,price,sort_order) SELECT id,'₹10',10,1 FROM menu_items WHERE name='Paani';
+INSERT INTO menu_item_variants(menu_item_id,name,price,sort_order) SELECT id,'₹20',20,2 FROM menu_items WHERE name='Paani';
+INSERT INTO menu_item_variants(menu_item_id,name,price,sort_order) SELECT id,'Small',20,1 FROM menu_items WHERE name='Cold Drinks';
+INSERT INTO menu_item_variants(menu_item_id,name,price,sort_order) SELECT id,'Large',50,2 FROM menu_items WHERE name='Cold Drinks';

@@ -1,0 +1,1 @@
+export type AnyRecord=Record<string,any>; export type Boot={page:string;user:{id:number;name:string;email:string;mobile?:string|null;avatar?:string|null;role:'ADMIN'|'MANAGER'};csrf:string;data:AnyRecord;flash:{success?:string;error?:string}};

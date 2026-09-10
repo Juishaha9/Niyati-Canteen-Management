@@ -1,54 +1,64 @@
-# Niyati Canteen Management
+# Canteen Billing & Order Management PWA
 
-Niyati Canteen Management is a web-based Canteen Management System designed to simplify daily canteen operations and provide clear visibility into tables, orders, menu items, and daily sales.
+A deployable PHP/MySQL point-of-sale monolith for Niyati Canteen. React + TypeScript powers the interactive interface; PHP handles sessions, validation, authorization, business logic, and all database writes. There is no REST API or Node backend.
 
-The system uses role-based access with three user roles:
+See [requirements.md](requirements.md) for the complete software requirements.
 
-- **Admin** — Manage the complete system, including staff, tables, menu, orders, and sales.
-- **Manager** — Manage daily canteen operations, tables, orders, and menu availability.
-- **Waiter** — Manage tables, create customer orders, and track order status.
+## Architecture
 
-## Key Features
+- `public/index.php` bootstraps the application and dispatches normal GET/POST requests.
+- `app/Services/OrderService.php` executes transactional, server-authoritative totals, payment, and cancellation logic.
+- `routes/web.php` handles authenticated actions and renders the appropriate page data into the React bootstrap payload.
+- `resources/js` builds to `public/assets`; PHP serves the static production files.
+- `database/schema.sql` creates the schema and `database/seeders/initial.sql` provides legitimate initial configuration/menu data.
 
-- Role-based authentication and access control
-- Interactive table management
-- Available / occupied table tracking
-- Menu and pricing management
-- Quick order creation
-- Order status tracking
-- Daily order and sales overview
-- Sales history and reporting
-- Staff management
-- Responsive and user-friendly interface
+## Local setup
 
-## User Roles
+1. Install PHP 8.1+, MySQL 8+, and Node 20+ (Node is used only to compile the frontend).
+2. Copy `.env.example` to `.env` and set MySQL credentials plus `APP_URL`.
+3. Create/import the database:
 
-### Admin
-- Dashboard with daily sales and order overview
-- Manage tables
-- Manage orders
-- Manage menu items and prices
-- Manage staff
-- View sales and reports
-- System settings
+```powershell
+mysql -u root -p < database/schema.sql
+mysql -u root -p < database/seeders/initial.sql
+```
 
-### Manager
-- Manage and monitor tables
-- Manage and monitor orders
-- View menu
-- Manage menu availability
-- Monitor daily canteen operations
+4. The seed creates an administrator with email `admin123@gmail.com` and temporary password `Niyati@2026`. Sign in and create a replacement administrator/password before production. Generate an alternative hash with:
 
-### Waiter
-- View table status
-- Create new orders
-- View order details
-- Track assigned orders
+```powershell
+php -r "echo password_hash('YourStrongPassword', PASSWORD_DEFAULT), PHP_EOL;"
+```
 
-## Technology Stack
+Then update the `users.password_hash` value for that account in MySQL. Create further users (managers/waiters, each with their own email login) through the Admin UI.
 
-- **Frontend:** React.js
-- **Backend:** Backend API
-- **Database:** MySQL
+5. Install and compile the frontend:
 
-Niyati Canteen Management focuses on making canteen operations faster, simpler, and easier to manage while providing a scalable foundation for future enhancements.
+```powershell
+npm install
+npm run build
+```
+
+6. Run locally from the project root:
+
+```powershell
+php -S localhost:8080 -t public public/router.php
+```
+
+Open `http://localhost:8080`. The temporary seed credentials are `admin123@gmail.com` / `Niyati@2026`. Pages use clean URLs (e.g. `/dashboard`, `/orders`, `/bills`); `public/router.php` routes any non-static request to `index.php`, which reads the page name from the URL path.
+
+## Development
+
+Use `npm run dev` while editing React/CSS. PHP continues to use normal PHP server requests. Before deployment, run `npm run typecheck` and `npm run build`.
+
+## Production shared-hosting deployment
+
+1. Build assets locally with `npm run build`.
+2. Point the hosting document root to `public/` when possible. If the host cannot do this, keep application files above public web root and expose only public assets/index through its supported layout.
+3. Set `.env` outside version control with production DB settings and HTTPS `APP_URL`.
+4. Import schema then seed data once.
+5. Give PHP write access to `storage/logs`, `storage/sessions`, and `storage/uploads/menu`.
+6. Enable HTTPS so the session cookie becomes secure and PWA installation is supported.
+
+## PWA
+
+The app includes `manifest.webmanifest`, local icons, and a service worker. It caches only the static shell. Financial pages and every transaction require a live server/database connection and are never treated as offline-confirmed.
