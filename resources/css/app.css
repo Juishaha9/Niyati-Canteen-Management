@@ -327,16 +327,18 @@ tbody tr:hover{background:var(--bg)}
 .widget-occupied .widget-icon{background:linear-gradient(135deg,var(--c-magenta),var(--c-red))}
 
 .table-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:22px}
-.table-card{padding:22px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);min-height:172px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;transition:transform .22s cubic-bezier(.22,.9,.3,1.1),box-shadow .22s ease,border-color .22s ease}
+.table-card{padding:22px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);min-height:172px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;transition:transform .22s cubic-bezier(.22,.9,.3,1.1),box-shadow .22s ease,border-color .22s ease;cursor:pointer}
 .table-card:hover{box-shadow:0 16px 32px rgba(17,24,39,.12);transform:translateY(-4px);border-color:transparent}
+.table-card-body{display:flex;flex-direction:column;gap:14px;flex:1}
 .table-card-top{display:flex;align-items:center;gap:10px}
 .table-card-actions{margin-left:auto;display:flex;gap:6px}
-.table-card-actions form{display:contents}
 .table-card-icon{width:34px;height:34px;flex-shrink:0;border-radius:var(--radius-sm);display:grid;place-items:center;background:var(--teal-soft);color:var(--c-teal)}
 .table-card.occupied .table-card-icon,.table-card.billing .table-card-icon{background:var(--c-magenta-soft);color:var(--c-magenta)}
 .table-card small{font-size:11px;font-weight:800;color:var(--c-teal);letter-spacing:.06em;text-transform:uppercase}
 .table-card.occupied small,.table-card.billing small{color:var(--c-magenta)}
-.table-card h2{margin:0;font-size:21px;font-weight:800}
+.table-card h2{margin:0;font-size:21px;font-weight:800;line-height:1.25}
+.table-card.occupied h2,.table-card.billing h2{color:var(--c-magenta)}
+.table-card-body>b{margin-top:auto;font-size:15px;font-weight:700;color:var(--text-muted);letter-spacing:.01em}
 
 .section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .menu-head-right{display:flex;align-items:center;gap:16px}
@@ -475,15 +477,17 @@ tbody tr:hover{background:var(--bg)}
 }
 
 .order-layout{display:grid;grid-template-columns:minmax(0,1fr) 500px;gap:22px;align-items:start}
-.order-meta{display:flex;justify-content:space-between;margin-bottom:16px}
+.menu-area{position:sticky;top:16px;max-height:calc(100vh - 32px);display:flex;flex-direction:column}
+.order-meta{flex:none;display:flex;justify-content:space-between;margin-bottom:16px}
 .order-meta span{font-weight:800;color:var(--primary);display:block;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 .order-meta b{font-size:19px;font-weight:800}
-.search{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:0 13px;box-shadow:var(--shadow-sm)}
+.search{flex:none;display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:0 13px;box-shadow:var(--shadow-sm)}
 .search input{border:0;outline:0;padding:13px;width:100%;background:transparent}
-.chips{display:flex;gap:9px;overflow:auto;padding:14px 0}
+.chips{flex:none;display:flex;gap:9px;overflow:auto;padding:14px 0}
 .chips button{white-space:nowrap;border:1px solid var(--border);background:var(--surface);padding:9px 14px;border-radius:999px;color:var(--text-soft);font-weight:600;font-size:13px}
 .chips button.selected{background:linear-gradient(135deg,var(--primary),#6d7cff);color:#fff;border-color:transparent}
-.menu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
+.menu-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:4px}
+.menu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;align-content:start}
 .food-card{overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);cursor:pointer;box-shadow:var(--shadow-sm);transition:transform .22s cubic-bezier(.22,.9,.3,1.1),box-shadow .22s ease,border-color .22s ease}
 .food-card:hover{border-color:transparent;box-shadow:0 14px 28px rgba(17,24,39,.12);transform:translateY(-4px)}
 .food-card img{width:100%;height:128px;display:block;object-fit:cover;background:linear-gradient(135deg,var(--primary-soft),var(--teal-soft));transition:transform .45s cubic-bezier(.22,.9,.3,1.1)}
@@ -494,11 +498,13 @@ tbody tr:hover{background:var(--bg)}
 .variant-buttons{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
 .variant-buttons button{background:var(--primary-soft);color:var(--primary-dark);border:0;padding:6px 7px;border-radius:6px;font-size:11px;font-weight:700}
 
-.cart{position:sticky;top:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden;padding:0;font-size:14px}
-.cart-head{display:flex;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border)}
+.cart{position:sticky;top:16px;max-height:calc(100vh - 32px);display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden;padding:0;font-size:14px}
+.cart-head{flex:none;display:flex;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border)}
 .cart-head h2{font-size:19px}
 .icon{border:0;background:var(--primary-soft);color:var(--primary-dark);border-radius:var(--radius-sm);width:36px;height:36px}
-.cart-lines{overflow:visible}
+.cart-lines{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.menu-scroll,.cart-lines{scrollbar-width:none;-ms-overflow-style:none}
+.menu-scroll::-webkit-scrollbar,.cart-lines::-webkit-scrollbar{display:none}
 .cart-line{display:grid;grid-template-columns:1fr 92px 74px;gap:10px;padding:12px 22px;border-bottom:1px solid var(--border);align-items:center}
 .cart-line>div:last-child{text-align:right;font-size:13px}
 .cart-line b{font-size:14.5px}
@@ -684,9 +690,11 @@ tbody tr:hover{background:var(--bg)}
   .dash-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .split{grid-template-columns:1fr}
   .order-layout{grid-template-columns:1fr}
-  .cart{position:static}
+  .cart{position:static;max-height:none}
+  .menu-area{position:static;max-height:none}
+  .menu-scroll{flex:none;overflow:visible}
   .menu-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .cart-lines{max-height:none}
+  .cart-lines{flex:none;overflow:visible}
   .form-grid{grid-template-columns:1fr 1fr}
 }
 @media(max-width:500px){

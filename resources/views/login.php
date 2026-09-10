@@ -1,12 +1,12 @@
 <?php
-use App\Auth\Auth; use App\Helpers\Csrf; use App\Helpers\View;
+use App\Auth\Auth; use App\Helpers\Csrf; use App\Helpers\View; use App\Helpers\Vite;
 
 $view = $_GET['view'] ?? 'login';
 if (!in_array($view, ['login', 'forgot'], true)) $view = 'login';
 
 $errorMsg = View::flash('error');
 $successMsg = View::flash('success');
-?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0060FF"><link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/assets/app.css"><title>Sign in — Niyati Canteen</title></head>
+?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0060FF"><link rel="manifest" href="/manifest.webmanifest"><?=Vite::css('resources/css/app.css')?><title>Sign in — Niyati Canteen</title></head>
 <body class="login-body" data-view="<?=View::esc($view)?>">
   <div class="login-orb login-orb-a"></div>
   <div class="login-orb login-orb-b"></div>
