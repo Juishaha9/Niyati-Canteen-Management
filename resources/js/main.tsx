@@ -1,6 +1,6 @@
 // The dynamic page payload is server-shaped; runtime validation remains authoritative in PHP.
 // @ts-nocheck
-import React,{useMemo,useState,useEffect,useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {LayoutDashboard,Table2,Package,ClipboardList,ReceiptText,Utensils,Tags,Users,BarChart3,Percent,Gift,History,Settings,LogOut,Plus,Minus,Search,Printer,IndianRupee,ChevronRight,Menu as MenuIcon,TrendingUp,XCircle,Pencil,X,Trash2,CheckCircle2,Clock,RotateCcw,Wallet,Smartphone,Coffee,Sunrise,Soup,UtensilsCrossed,Salad,GlassWater,ChefHat,Star,Sandwich,MoreVertical,Eye,Info,ShieldCheck,RefreshCw,AlertTriangle,User,KeyRound,Camera} from 'lucide-react'; import '../css/app.css'; import type {Boot,AnyRecord} from './types';
+import React,{useMemo,useState,useEffect,useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {LayoutDashboard,Table2,Package,ClipboardList,ReceiptText,Utensils,Tags,Users,BarChart3,Percent,Gift,History,Settings,LogOut,Plus,Minus,Search,Printer,IndianRupee,ChevronRight,ChevronDown,Menu as MenuIcon,TrendingUp,XCircle,Pencil,X,Trash2,CheckCircle2,Clock,RotateCcw,Wallet,Smartphone,Coffee,Sunrise,Soup,UtensilsCrossed,Salad,GlassWater,ChefHat,Star,Sandwich,MoreVertical,Eye,Info,ShieldCheck,RefreshCw,AlertTriangle,User,KeyRound,Camera} from 'lucide-react'; import '../css/app.css'; import type {Boot,AnyRecord} from './types';
 declare global{interface Window{__CANTEEN__:Boot}} const boot=window.__CANTEEN__; const money=(v:any)=>'₹'+Number(v||0).toFixed(2); const go=(p:string)=>location.href='/'+p; const Form=({children,method='post',...p}:any)=><form method={method} {...p}>{method==='post'&&<input type="hidden" name="_csrf" value={boot.csrf}/>} {children}</form>; const toggleSidebar=()=>document.querySelector('.sidebar')?.classList.toggle('collapsed');
 const settingOn=(k:string,def=true)=>{const v=(boot.data as any)?.settings?.[k];return v===undefined?def:v==='1'};
 const hasPermission=(code:string)=>boot.user.role==='ADMIN'||(boot.user.permissions||[]).includes(code);
@@ -12,7 +12,8 @@ const categoryIcon=(name:string)=>CATEGORY_ICON_MAP[String(name||'').trim().toLo
 const CATEGORY_COLORS=[['var(--primary-soft)','var(--primary-dark)'],['var(--teal-soft)','var(--c-teal)'],['var(--orange-soft)','#b8790a'],['var(--purple-soft)','var(--purple)'],['var(--c-magenta-soft)','var(--c-magenta)'],['var(--blue-soft)','var(--blue)']];
 const categoryColor=(id:number)=>CATEGORY_COLORS[Number(id)%CATEGORY_COLORS.length];
 const NAV_ITEMS=[['dashboard',LayoutDashboard,'Dashboard'],['orders',ClipboardList,'Orders'],['bills',ReceiptText,'Bills'],['tables',Table2,'Tables'],['parcels',Package,'Parcel'],['menu',Utensils,'Menu'],['categories',Tags,'Categories'],['users',Users,'Users'],['reports',BarChart3,'Reports'],['cancelled',ReceiptText,'Cancelled Bills'],['modified',History,'Modified Bills'],['audits',History,'Audit History'],['settings',Settings,'Settings']]; const NAV_BASE_PAGES=['tables','parcels','orders','bills']; const navFor=(user:any)=>user.role==='ADMIN'?NAV_ITEMS:NAV_ITEMS.filter(([key]:any)=>NAV_BASE_PAGES.includes(key)||(user.permissions||[]).includes(key));
-function Shell({children}:any){const nav=navFor(boot.user);return <div className="app"><aside className="sidebar"><div className="brand"><img src="/icons/logo.png" alt="Niyati"/></div><nav>{nav.map(([key,Icon,label]:any)=><button className={boot.page===key?'active':''} onClick={()=>go(key)} key={key}><Icon size={19}/><span>{label}</span></button>)}</nav><Form><input name="action" value="logout" type="hidden"/><button className="logout"><LogOut size={18}/><span>Logout</span></button></Form></aside><main className="main"><header className="topbar"><button type="button" className="menu-toggle" onClick={toggleSidebar} title="Toggle menu"><MenuIcon/></button><div className="topbar-right"><AccountMenu/></div></header>{boot.flash.error&&<div className="alert error">{boot.flash.error}</div>}{boot.flash.success&&<div className="alert success">{boot.flash.success}</div>}{children}</main></div>}
+const closeSidebar=()=>document.querySelector('.sidebar')?.classList.remove('collapsed');
+function Shell({children}:any){const nav=navFor(boot.user);return <div className="app"><aside className="sidebar"><div className="brand"><img src="/icons/logo.png" alt="Niyati"/></div><nav>{nav.map(([key,Icon,label]:any)=><button className={boot.page===key?'active':''} onClick={()=>{closeSidebar();go(key)}} key={key}><Icon size={19}/><span>{label}</span></button>)}</nav><Form><input name="action" value="logout" type="hidden"/><button className="logout"><LogOut size={18}/><span>Logout</span></button></Form></aside><div className="sidebar-backdrop" onClick={closeSidebar}/><main className="main"><header className="topbar"><button type="button" className="menu-toggle" onClick={toggleSidebar} title="Toggle menu"><MenuIcon/></button><div className="topbar-right"><AccountMenu/></div></header>{boot.flash.error&&<div className="alert error">{boot.flash.error}</div>}{boot.flash.success&&<div className="alert success">{boot.flash.success}</div>}{children}</main></div>}
 function AccountMenu(){
   const [open,setOpen]=useState(false); const [pwOpen,setPwOpen]=useState(false);
   const boxRef=useRef<HTMLDivElement>(null);
@@ -139,12 +140,19 @@ function RecentOrdersCard({rows}:any){
   rows=rows||[];
   return <section className="surface data-table dash-card">
     <div className="section-head"><h2>Recent Orders</h2><button type="button" className="secondary view-full-btn" onClick={()=>go('orders')}>View All <ChevronRight size={15}/></button></div>
-    <div className="table-scroll"><table>
+    <div className="table-scroll dash-orders-table-wrap"><table>
       <thead><tr><th>Order</th><th>Time</th><th>Table</th><th>Waiter</th><th>Amount</th><th>Status</th></tr></thead>
       <tbody>{rows.length?rows.map((o:any)=><tr key={o.id} className="dash-order-row" onClick={()=>location.href='/order?id='+o.id}>
         <td><a href={'/order?id='+o.id}>{o.order}</a></td><td>{o.time}</td><td>{o.table}</td><td>{o.waiter}</td><td>{moneyINR(o.amount)}</td><td><DashStatusChip status={o.status}/></td>
       </tr>):<tr><td colSpan={6} className="muted">No orders yet today.</td></tr>}</tbody>
     </table></div>
+    <div className="dash-orders-cards">
+      {rows.length?rows.map((o:any)=><a href={'/order?id='+o.id} className="dash-order-card" key={o.id}>
+        <div className="dash-order-card-top"><span className="dash-order-number">{o.order}</span><b>{moneyINR(o.amount)}</b></div>
+        <div className="dash-order-card-meta"><span>{o.table}</span><span className="dash-order-card-dot">·</span><span>{o.time}</span></div>
+        <div className="dash-order-card-bottom"><span className="dash-order-card-waiter">{o.waiter}</span><DashStatusChip status={o.status}/></div>
+      </a>):<p className="muted">No orders yet today.</p>}
+    </div>
   </section>;
 }
 function CollectionCard({data}:any){
@@ -162,9 +170,18 @@ function TopItemsCard({items}:any){
   items=items||[];
   return <section className="surface dash-card">
     <div className="section-head"><h2>Top Selling Items Today</h2></div>
-    <table><thead><tr><th>Item</th><th>Qty Sold</th><th>Sales</th></tr></thead>
+    <div className="table-scroll dash-topitems-table-wrap"><table><thead><tr><th>Item</th><th>Qty Sold</th><th>Sales</th></tr></thead>
       <tbody>{items.length?items.map((x:any)=><tr key={x.name}><td>{x.name}</td><td>{x.qty}</td><td>{moneyINR(x.sales)}</td></tr>):<tr><td colSpan={3} className="muted">No items sold yet today.</td></tr>}</tbody>
-    </table>
+    </table></div>
+    <div className="dash-topitem-cards">
+      {items.length?items.map((x:any,i:number)=><div className="dash-topitem-card" key={x.name}>
+        <span className="dash-topitem-rank">{i+1}</span>
+        <div className="dash-topitem-info">
+          <div className="dash-topitem-top"><span className="dash-topitem-name">{x.name}</span><b>{x.qty}</b></div>
+          <div className="dash-topitem-sales">{moneyINR(x.sales)}</div>
+        </div>
+      </div>):<p className="muted">No items sold yet today.</p>}
+    </div>
     <button type="button" className="secondary view-full-btn dash-card-footer-btn" onClick={()=>go('reports')}>View Menu Report <ChevronRight size={15}/></button>
   </section>;
 }
@@ -320,29 +337,124 @@ function OrderEditor({order,menu,variants,initial,settings}:any){
   </aside>
   <div className="print-bill"><div className="bill-head">{settingOn('show_logo_on_bill')&&settings.logo_path&&<img className="bill-logo" src={logoSrc(settings.logo_path)} alt=""/>}<h2>{settings.canteen_name||'Canteen'}</h2>{settings.address&&<p>{settings.address}</p>}{settings.phone&&<p>Ph: {settings.phone}</p>}{settings.gst_number&&<p>GSTIN: {settings.gst_number}</p>}</div><div className="bill-meta"><div><span>Bill No</span><b>{order.order_number}</b></div>{settingOn('show_table_number')&&<div><span>Table</span><b>{order.table_name}</b></div>}<div><span>Date</span><b>{new Date().toLocaleString()}</b></div>{settingOn('show_waiter_name')&&<div><span>Served by</span><b>{order.created_by_name}</b></div>}</div><table className="bill-table"><thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>{items.map((x:any,i:number)=>{const gross=Number(x.unit_price)*Number(x.quantity);const lineDiscount=itemDiscountAmount(x,gross);return <tr key={i}><td>{x.item_name_snapshot}{x.variant_name_snapshot?` (${x.variant_name_snapshot})`:''}{x.complementary?' - Complementary':''}</td><td>{x.quantity}</td><td>{money(x.unit_price)}</td><td>{x.complementary?money(0):money(gross-lineDiscount)}</td></tr>})}</tbody></table><div className="bill-totals"><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{comp>0&&<div><span>Complementary</span><b>-{money(comp)}</b></div>}{totalDiscount>0&&<div><span>Discount</span><b>-{money(totalDiscount)}</b></div>}<div className="grand"><span>Grand Total</span><b>{money(total)}</b></div></div>{settingOn('show_thank_you_message')&&<p className="bill-footer">{settings.thank_you_message||'Thank you. Visit again.'}</p>}</div></div>
 }
-function DataTable({title,headers,rows,className}:any){return <section className={'surface data-table'+(className?' '+className:'')}><h2>{title}</h2><div className="table-scroll"><table><thead><tr>{headers.map((h:string)=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows?.length?rows.map((r:any[],i:number)=><tr key={i}>{r.map((c:any,j:number)=><td key={j}>{c}</td>)}</tr>):<tr><td colSpan={headers.length} className="muted">No records found.</td></tr>}</tbody></table></div></section>}
+function DataTable({title,headers,rows,mobileRows,className}:any){return <section className={'surface data-table'+(className?' '+className:'')}><h2>{title}</h2><div className={'table-scroll'+(mobileRows?' data-table-scroll-wrap':'')}><table><thead><tr>{headers.map((h:string)=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows?.length?rows.map((r:any[],i:number)=><tr key={i}>{r.map((c:any,j:number)=><td key={j}>{c}</td>)}</tr>):<tr><td colSpan={headers.length} className="muted">No records found.</td></tr>}</tbody></table></div>{mobileRows&&<div className="data-table-cards">{mobileRows.length?mobileRows:<p className="muted">No records found.</p>}</div>}</section>}
 function ListPage(){const rows=boot.data.orders||[];const title=boot.page==='modified'?'Modified bills':'Bills';return <Shell><DataTable title={title} headers={['Reference','Table','Status','Total','Updated']} rows={rows.map((o:any)=>[<a href={'/order?id='+o.id}>{o.bill_number||o.order_number}</a>,o.table_name||'—',o.status+(o.modifications?` (${o.modifications} changes)`:''),money(o.grand_total),new Date(o.updated_at||o.completed_at||o.cancelled_at).toLocaleString()])}/></Shell>}
 const ORDER_STATUS_LABEL:Record<string,string>={DRAFT:'New',OPEN:'Preparing',SERVED:'Served',PAID:'Completed',CANCELLED:'Cancelled'};
 function StatusChip({status}:any){return <span className={'status-chip status-'+String(status).toLowerCase()}>{ORDER_STATUS_LABEL[status]||status}</span>}
+function TableSelect({options,value,onChange,placeholder}:any){
+  const [open,setOpen]=useState(false);
+  const [search,setSearch]=useState('');
+  const [pos,setPos]=useState<any>(null);
+  const triggerRef=useRef<HTMLButtonElement>(null);
+  const isDesktop=useIsDesktop();
+
+  const computePosition=()=>{
+    if(!triggerRef.current)return;
+    const r=triggerRef.current.getBoundingClientRect();
+    const spaceBelow=window.innerHeight-r.bottom;
+    const spaceAbove=r.top;
+    const openUp=spaceBelow<220&&spaceAbove>spaceBelow;
+    const maxHeight=Math.max(140,Math.min(280,(openUp?spaceAbove:spaceBelow)-16));
+    setPos(openUp
+      ?{left:r.left,width:r.width,bottom:window.innerHeight-r.top+6,maxHeight}
+      :{left:r.left,width:r.width,top:r.bottom+6,maxHeight});
+  };
+
+  useEffect(()=>{
+    if(!open||!isDesktop)return;
+    computePosition();
+    const onScroll=()=>computePosition();
+    window.addEventListener('scroll',onScroll,true);
+    window.addEventListener('resize',onScroll);
+    return()=>{window.removeEventListener('scroll',onScroll,true);window.removeEventListener('resize',onScroll)};
+  },[open,isDesktop]);
+
+  useEffect(()=>{
+    if(!open)return;
+    const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')setOpen(false)};
+    window.addEventListener('keydown',onKey);
+    return()=>window.removeEventListener('keydown',onKey);
+  },[open]);
+
+  useEffect(()=>{if(!open)setSearch('')},[open]);
+
+  const selected=options.find((t:any)=>String(t.id)===String(value));
+  const filtered=search.trim()?options.filter((t:any)=>t.table_name.toLowerCase().includes(search.trim().toLowerCase())):options;
+  const pick=(id:any)=>{onChange(id);setOpen(false)};
+
+  return <div className="table-select">
+    <button type="button" ref={triggerRef} className="table-select-trigger" onClick={()=>setOpen(true)}>
+      <span className={selected?'':'table-select-placeholder'}>{selected?selected.table_name:placeholder}</span>
+      <ChevronDown size={16}/>
+    </button>
+    {open&&createPortal(isDesktop?<>
+      <div className="table-select-backdrop" onClick={()=>setOpen(false)}/>
+      {pos&&<div className="table-select-popover" style={pos}>
+        {options.length?options.map((t:any)=><button type="button" key={t.id} className={'table-select-option'+(String(t.id)===String(value)?' active':'')} onClick={()=>pick(t.id)}>{t.table_name}</button>):<div className="table-select-empty muted">No tables available</div>}
+      </div>}
+    </>:
+      <div className="table-sheet-overlay" onClick={(e:any)=>{if(e.target===e.currentTarget)setOpen(false)}}>
+        <div className="table-sheet">
+          <div className="table-sheet-head"><h3>{placeholder}</h3><button type="button" className="modal-close" onClick={()=>setOpen(false)} title="Close"><X size={18}/></button></div>
+          <div className="table-sheet-search"><Search size={16}/><input autoFocus value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search table..."/></div>
+          <div className="table-sheet-list">
+            {filtered.length?filtered.map((t:any)=><button type="button" key={t.id} className={'table-sheet-option'+(String(t.id)===String(value)?' active':'')} onClick={()=>pick(t.id)}>{t.table_name}</button>):<div className="table-select-empty muted">No matching tables</div>}
+          </div>
+        </div>
+      </div>
+    ,document.body)}
+  </div>;
+}
+function useIsDesktop(){
+  const [isDesktop,setIsDesktop]=useState(()=>typeof window!=='undefined'?window.innerWidth>680:true);
+  useEffect(()=>{
+    const mq=window.matchMedia('(min-width:681px)');
+    const onChange=()=>setIsDesktop(mq.matches);
+    onChange();
+    mq.addEventListener('change',onChange);
+    return()=>mq.removeEventListener('change',onChange);
+  },[]);
+  return isDesktop;
+}
 function OrderModal({mode,order,tables,onClose}:any){
   useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);
   const [status,setStatus]=useState(order?.status||'DRAFT');
   const [orderType,setOrderType]=useState(order?.order_type||'TABLE');
+  const [orderKind,setOrderKind]=useState('TABLE');
+  const [tableId,setTableId]=useState(order?.table_id||'');
   const options=tables.filter((t:any)=>t.status==='AVAILABLE'||t.id===order?.table_id);
+  const tableOptions=mode==='add'?options.filter((t:any)=>t.kind===orderKind):options;
   const action=mode==='add'?'order_create':status==='CANCELLED'?'order_cancel':status==='PAID'?'order_pay':'order_edit';
+  const isParcel=mode==='add'&&orderKind==='PARCEL';
+  useEffect(()=>{
+    if(isParcel)setTableId(tableOptions[0]?.id||'');
+  },[isParcel,tableOptions.map((t:any)=>t.id).join(',')]);
   return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}>
     <div className="modal-panel">
       <div className="modal-head"><h2>{mode==='add'?'Add order':`Edit order · ${order.order_number}`}</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div>
       <Form key={action}>
         <input type="hidden" name="action" value={action}/>
+        {(mode==='add'||action==='order_edit')&&<input type="hidden" name="table_id" value={tableId}/>}
         {mode==='edit'&&<input type="hidden" name="order_id" value={order.id}/>}
         {mode==='edit'&&action==='order_edit'&&<input type="hidden" name="status" value={status}/>}
         {mode==='edit'&&action==='order_edit'&&<input type="hidden" name="order_type" value={orderType}/>}
         <div className="form-grid">
-          {(mode==='add'||action==='order_edit')&&<label>Table<select name="table_id" required defaultValue={order?.table_id||''} autoFocus={mode==='add'}>
-            <option value="" disabled>Select table</option>
-            {options.map((t:any)=><option value={t.id} key={t.id}>{t.table_name}</option>)}
-          </select></label>}
+          {mode==='add'&&<div className="wide order-type-field">
+            <span className="order-type-field-label">Select order type</span>
+            <div className="order-type-picker">
+              <button type="button" className={'order-type-card'+(orderKind==='TABLE'?' active':'')} onClick={()=>{setOrderKind('TABLE');setTableId('')}}>
+                <Table2 size={22}/>
+                <span className="order-type-card-text"><b>Table</b><small>Dine-in</small></span>
+              </button>
+              <button type="button" className={'order-type-card'+(orderKind==='PARCEL'?' active':'')} onClick={()=>setOrderKind('PARCEL')}>
+                <Package size={22}/>
+                <span className="order-type-card-text"><b>Parcel</b><small>Takeaway</small></span>
+              </button>
+            </div>
+          </div>}
+          {!isParcel&&(mode==='add'||action==='order_edit')&&<label className="wide">Select Table
+            <TableSelect options={mode==='add'?tableOptions:options} value={tableId} onChange={setTableId} placeholder="Select table"/>
+          </label>}
           {mode==='edit'&&action==='order_edit'&&<label>Order type<select value={orderType} onChange={e=>setOrderType(e.target.value)}>
             <option value="TABLE">Table</option>
             <option value="TAKEAWAY">Parcel</option>
@@ -358,7 +470,10 @@ function OrderModal({mode,order,tables,onClose}:any){
           {action==='order_cancel'&&<label>Cancellation reason<input name="reason" required={settingOn('require_cancellation_reason')} placeholder="Reason for cancelling"/></label>}
         </div>
         <div className="form-actions">
-          <button className="primary" onClick={(e:any)=>{if(action==='order_cancel'&&settingOn('confirm_cancel_order')&&!confirm('Cancel this order?')){e.preventDefault()}}}>{mode==='add'?'Create order':'Save changes'}</button>
+          <button className="primary" onClick={(e:any)=>{
+            if((mode==='add'||action==='order_edit')&&!tableId){e.preventDefault();alert(isParcel?'No parcel is available right now.':'Please select a table.');return}
+            if(action==='order_cancel'&&settingOn('confirm_cancel_order')&&!confirm('Cancel this order?')){e.preventDefault()}
+          }}>{mode==='add'?'Create order':'Save changes'}</button>
           <button type="button" className="secondary" onClick={onClose}>Cancel</button>
         </div>
       </Form>
@@ -411,7 +526,17 @@ function OrdersPage(){
       </div>
       <button type="button" className="clear-filters-btn" onClick={clearFilters}><RotateCcw size={15}/> Clear Filters</button>
     </section>
-    <DataTable title="Orders" headers={['Order','Table','Waiter','Status','Items','Total','Actions']} rows={filtered.map((o:any)=>[<a href={'/order?id='+o.id}>{o.order_number}</a>,o.table_name||'—',o.display_name||'—',<StatusChip status={o.status}/>,o.item_count,money(o.grand_total),<button type="button" className="icon" title="Edit order" onClick={()=>setModal({mode:'edit',order:o})}><Pencil size={15}/></button>])}/>
+    <DataTable title="Orders" headers={['Order','Table','Waiter','Status','Items','Total','Actions']} rows={filtered.map((o:any)=>[<a href={'/order?id='+o.id}>{o.order_number}</a>,o.table_name||'—',o.display_name||'—',<StatusChip status={o.status}/>,o.item_count,money(o.grand_total),<button type="button" className="icon" title="Edit order" onClick={()=>setModal({mode:'edit',order:o})}><Pencil size={15}/></button>])}
+      mobileRows={filtered.map((o:any)=><div className="order-list-card" key={o.id}>
+        <div className="order-list-card-top">
+          <a href={'/order?id='+o.id} className="order-list-number">{o.order_number}</a>
+          <StatusChip status={o.status}/>
+        </div>
+        <div className="order-list-card-row"><span>Table</span><b>{o.table_name||'—'}</b></div>
+        <div className="order-list-card-row"><span>Waiter</span><b>{o.display_name||'—'}</b></div>
+        <div className="order-list-card-row"><span>Items</span><b>{o.item_count}</b></div>
+        <div className="order-list-card-row"><span>Total</span><div className="order-list-card-total-actions"><b>{money(o.grand_total)}</b><button type="button" className="icon" title="Edit order" onClick={()=>setModal({mode:'edit',order:o})}><Pencil size={14}/></button></div></div>
+      </div>)}/>
     {modal&&<OrderModal mode={modal.mode} order={modal.order} tables={canteenTables} onClose={()=>setModal(null)}/>}
   </Shell>;
 }
