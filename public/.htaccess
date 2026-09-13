@@ -2,7 +2,30 @@ Options -Indexes
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
+
+  # If this app is ever deployed flat — everything inside the same folder as
+  # index.php, e.g. Hostinger public_html, with no separate non-web-exposed
+  # parent directory to keep the backend out of reach — these folders and
+  # .env would otherwise sit directly inside the document root, and a
+  # requested .php file inside them would be *executed* by the "serve any
+  # real file directly" rule below, not just read. Block them first. When
+  # public/ is the docroot instead (local XAMPP dev, or any host pointed at
+  # public/), none of these paths exist here at all, so these two rules are
+  # harmless no-ops.
+  RewriteRule ^(app|config|database|routes|resources|storage)(/|$) - [F,L]
+  RewriteRule (^|/)\.env(\.|$) - [F,L]
+
   RewriteCond %{REQUEST_FILENAME} -f
   RewriteRule ^ - [L]
   RewriteRule ^ index.php [L]
 </IfModule>
+
+<FilesMatch "^\.env">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
