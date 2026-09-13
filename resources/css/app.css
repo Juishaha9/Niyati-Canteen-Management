@@ -53,9 +53,9 @@ h1,h2,h3,p{margin:0}
 :root{--header-h:68px}
 @media(max-width:500px){:root{--header-h:60px}}
 
-.app{min-height:100vh;display:flex}
+.app{min-height:100vh;min-height:100dvh;display:flex}
 
-.sidebar{position:fixed;inset:0 auto 0 0;width:262px;background:var(--surface);color:var(--text-muted);padding:0;display:flex;flex-direction:column;overflow:hidden;z-index:10;border-right:1px solid var(--border);transition:width .18s ease}
+.sidebar{position:fixed;inset:0 auto 0 0;width:262px;background:var(--surface);color:var(--text-muted);padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left);display:flex;flex-direction:column;overflow:hidden;z-index:10;border-right:1px solid var(--border);transition:width .18s ease}
 .sidebar.collapsed{width:76px}
 .brand{width:100%;height:var(--header-h);box-sizing:border-box;display:flex;align-items:center;justify-content:center;padding:0;overflow:hidden;white-space:nowrap;border-bottom:1px solid var(--border);flex-shrink:0}
 .brand img{width:auto;height:40px;max-width:80%;display:block;object-fit:contain}
@@ -73,10 +73,10 @@ h1,h2,h3,p{margin:0}
 .logout:hover{background:var(--danger-soft);color:#b91c1c}
 .sidebar-backdrop{display:none}
 
-.main{width:calc(100% - 262px);margin-left:262px;padding:24px 28px 32px;max-width:1680px;background:var(--bg);min-height:100vh;position:relative}
+.main{width:calc(100% - 262px);margin-left:262px;padding:24px 28px calc(32px + env(safe-area-inset-bottom));max-width:1680px;background:var(--bg);min-height:100vh;min-height:100dvh;position:relative}
 .sidebar.collapsed~.main{width:calc(100% - 76px);margin-left:76px}
 
-.topbar{height:var(--header-h);box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;background:var(--surface);margin:-24px -28px 24px;padding:0 28px;border-radius:0;border:0;border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm)}
+.topbar{height:calc(var(--header-h) + env(safe-area-inset-top));box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;background:var(--surface);margin:-24px -28px 24px;padding:env(safe-area-inset-top) 28px 0;border-radius:0;border:0;border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm)}
 .menu-toggle{background:none;border:none;cursor:pointer;padding:6px;display:flex;align-items:center;color:var(--text);border-radius:var(--radius-sm)}
 .menu-toggle:hover{background:var(--primary-soft);color:var(--primary-dark)}
 .menu-toggle svg{width:22px;height:22px}
@@ -815,6 +815,14 @@ tbody tr:hover{background:var(--bg)}
 .payment-success-toast b{display:block;font-size:14px}
 .payment-success-toast span{display:block;font-size:12.5px;color:var(--text-muted);font-weight:600;margin-top:1px}
 @media (max-width:680px){.payment-success-toast{top:auto;bottom:18px;width:calc(100vw - 32px)}}
+.install-banner{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:95;display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-md);border-radius:var(--radius-md);padding:14px 16px;padding-bottom:calc(14px + env(safe-area-inset-bottom));width:460px;max-width:calc(100vw - 32px);animation:panel-in .22s ease}
+.install-banner-icon{border-radius:10px;flex-shrink:0}
+.install-banner-body{flex:1;min-width:0}
+.install-banner-body b{display:block;font-size:14px;margin-bottom:2px}
+.install-banner-body p{margin:0;font-size:12.5px;color:var(--text-muted);line-height:1.4}
+.install-banner-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.install-banner-actions button{white-space:nowrap}
+@media (max-width:680px){.install-banner{flex-direction:column;align-items:stretch;text-align:center;width:calc(100vw - 32px)}.install-banner-actions{flex-direction:row;justify-content:center}}
 /* A 2-column grid here would reserve its second column's width even when
    the value input isn't rendered (type === NONE), squeezing "No item
    discount" down to just its arrow. Flex only reserves space for what's

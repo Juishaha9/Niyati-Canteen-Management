@@ -6,7 +6,7 @@ if (!in_array($view, ['login', 'forgot'], true)) $view = 'login';
 
 $errorMsg = View::flash('error');
 $successMsg = View::flash('success');
-?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0060FF"><link rel="manifest" href="/manifest.webmanifest"><?=Vite::css('resources/css/app.css')?><title>Sign in — Niyati Canteen</title></head>
+?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#4b5fee"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Niyati Canteen"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icons/icon-192.png"><link rel="apple-touch-icon" href="/icons/icon-192.png"><?=Vite::css('resources/css/app.css')?><title>Sign in — Niyati Canteen</title></head>
 <body class="login-body" data-view="<?=View::esc($view)?>">
   <div class="login-orb login-orb-a"></div>
   <div class="login-orb login-orb-b"></div>

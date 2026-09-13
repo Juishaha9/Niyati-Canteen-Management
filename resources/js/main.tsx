@@ -1,6 +1,6 @@
 // The dynamic page payload is server-shaped; runtime validation remains authoritative in PHP.
 // @ts-nocheck
-import React,{useMemo,useState,useEffect,useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {LayoutDashboard,Table2,Package,ClipboardList,ReceiptText,Utensils,Tags,Users,BarChart3,Percent,Gift,History,Settings,LogOut,Plus,Minus,Search,Printer,IndianRupee,ChevronRight,ChevronDown,Menu as MenuIcon,TrendingUp,XCircle,Pencil,X,Trash2,CheckCircle2,Clock,RotateCcw,Wallet,Smartphone,Coffee,Sunrise,Soup,UtensilsCrossed,Salad,GlassWater,ChefHat,Star,Sandwich,MoreVertical,Eye,Info,ShieldCheck,RefreshCw,AlertTriangle,User,KeyRound,Camera} from 'lucide-react'; import '../css/app.css'; import type {Boot,AnyRecord} from './types';
+import React,{useMemo,useState,useEffect,useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {LayoutDashboard,Table2,Package,ClipboardList,ReceiptText,Utensils,Tags,Users,BarChart3,Percent,Gift,History,Settings,LogOut,Plus,Minus,Search,Printer,IndianRupee,ChevronRight,ChevronDown,Menu as MenuIcon,TrendingUp,XCircle,Pencil,X,Trash2,CheckCircle2,Clock,RotateCcw,Wallet,Smartphone,Coffee,Sunrise,Soup,UtensilsCrossed,Salad,GlassWater,ChefHat,Star,Sandwich,MoreVertical,Eye,Info,ShieldCheck,RefreshCw,AlertTriangle,User,KeyRound,Camera,Maximize2,Minimize2,Download} from 'lucide-react'; import '../css/app.css'; import type {Boot,AnyRecord} from './types';
 declare global{interface Window{__CANTEEN__:Boot}} const boot=window.__CANTEEN__; const money=(v:any)=>'₹'+Number(v||0).toFixed(2); const go=(p:string)=>{showMainLoading();location.href='/'+p}; const Form=({children,method='post',...p}:any)=><form method={method} {...p}>{method==='post'&&<input type="hidden" name="_csrf" value={boot.csrf}/>} {children}</form>; const toggleSidebar=()=>document.querySelector('.sidebar')?.classList.toggle('collapsed');
 const settingOn=(k:string,def=true)=>{const v=(boot.data as any)?.settings?.[k];return v===undefined?def:v==='1'};
 
@@ -148,7 +148,80 @@ const CATEGORY_COLORS=[['var(--primary-soft)','var(--primary-dark)'],['var(--tea
 const categoryColor=(id:number)=>CATEGORY_COLORS[Number(id)%CATEGORY_COLORS.length];
 const NAV_ITEMS=[['dashboard',LayoutDashboard,'Dashboard'],['orders',ClipboardList,'Orders'],['bills',ReceiptText,'Bills'],['tables',Table2,'Tables'],['parcels',Package,'Parcel'],['menu',Utensils,'Menu'],['categories',Tags,'Categories'],['users',Users,'Users'],['reports',BarChart3,'Reports'],['cancelled',ReceiptText,'Cancelled Bills'],['modified',History,'Modified Bills'],['audits',History,'Audit History'],['settings',Settings,'Settings']]; const NAV_BASE_PAGES=['tables','parcels','orders','bills']; const navFor=(user:any)=>user.role==='ADMIN'?NAV_ITEMS:NAV_ITEMS.filter(([key]:any)=>NAV_BASE_PAGES.includes(key)||(user.permissions||[]).includes(key));
 const closeSidebar=()=>document.querySelector('.sidebar')?.classList.remove('collapsed');
-function Shell({children}:any){const nav=navFor(boot.user);return <div className="app"><aside className="sidebar"><div className="brand"><img src="/icons/logo.png" alt="Niyati"/></div><nav>{nav.map(([key,Icon,label]:any)=><button className={boot.page===key?'active':''} onClick={()=>{closeSidebar();go(key)}} key={key}><Icon size={19}/><span>{label}</span></button>)}</nav><Form><input name="action" value="logout" type="hidden"/><button className="logout"><LogOut size={18}/><span>Logout</span></button></Form></aside><div className="sidebar-backdrop" onClick={closeSidebar}/><main className="main"><header className="topbar"><button type="button" className="menu-toggle" onClick={toggleSidebar} title="Toggle menu"><MenuIcon/></button><div className="topbar-right"><AccountMenu/></div></header>{boot.flash.error&&<div className="alert error">{boot.flash.error}</div>}{boot.flash.success&&<div className="alert success">{boot.flash.success}</div>}{children}</main></div>}
+// ===== Fullscreen toggle (desktop "installed app" feel) =====
+// Never auto-requested — only ever called from this button's own click, per
+// the Fullscreen API's requirement of a direct user gesture.
+function useFullscreen(){
+  const supported=typeof document!=='undefined'&&!!(document.documentElement.requestFullscreen&&document.exitFullscreen);
+  const [isFullscreen,setIsFullscreen]=useState(()=>!!document.fullscreenElement);
+  useEffect(()=>{
+    if(!supported)return;
+    const onChange=()=>setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange',onChange);
+    return()=>document.removeEventListener('fullscreenchange',onChange);
+  },[supported]);
+  const toggle=()=>{
+    if(!supported)return;
+    if(!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});
+    else document.exitFullscreen().catch(()=>{});
+  };
+  return {supported,isFullscreen,toggle};
+}
+function FullscreenButton(){
+  const {supported,isFullscreen,toggle}=useFullscreen();
+  if(!supported)return null;
+  return <button type="button" className="menu-toggle" onClick={toggle} title={isFullscreen?'Exit full screen':'Full screen'} aria-pressed={isFullscreen}>
+    {isFullscreen?<Minimize2 size={19}/>:<Maximize2 size={19}/>}
+  </button>;
+}
+// ===== PWA install/standalone detection =====
+// Server-authoritative business data is untouched by any of this — it only
+// ever reads browser/OS install signals, never writes app state.
+const isIOSDevice=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const isStandaloneDisplay=()=>window.matchMedia('(display-mode: standalone)').matches||(window.navigator as any).standalone===true;
+function usePWAInstall(){
+  const [installed,setInstalled]=useState(isStandaloneDisplay);
+  const [deferred,setDeferred]=useState<any>(null);
+  useEffect(()=>{
+    const onBeforeInstall=(e:any)=>{e.preventDefault();setDeferred(e)};
+    const onInstalled=()=>{setInstalled(true);setDeferred(null)};
+    const mq=window.matchMedia('(display-mode: standalone)');
+    const onModeChange=(e:any)=>{if(e.matches)setInstalled(true)};
+    window.addEventListener('beforeinstallprompt',onBeforeInstall);
+    window.addEventListener('appinstalled',onInstalled);
+    mq.addEventListener('change',onModeChange);
+    return()=>{window.removeEventListener('beforeinstallprompt',onBeforeInstall);window.removeEventListener('appinstalled',onInstalled);mq.removeEventListener('change',onModeChange)};
+  },[]);
+  const promptInstall=async():Promise<'accepted'|'dismissed'|'unavailable'>=>{
+    if(!deferred)return 'unavailable';
+    deferred.prompt();
+    const choice=await deferred.userChoice.catch(()=>null);
+    setDeferred(null);
+    if(choice?.outcome==='accepted'){setInstalled(true);return 'accepted'}
+    return 'dismissed';
+  };
+  return {installed,canInstall:!!deferred,isIOS:isIOSDevice(),promptInstall};
+}
+const INSTALL_DISMISS_KEY='pwa_install_dismissed';
+function InstallBanner(){
+  const {installed,canInstall,isIOS,promptInstall}=usePWAInstall();
+  const [dismissed,setDismissed]=useState(()=>{try{return sessionStorage.getItem(INSTALL_DISMISS_KEY)==='1'}catch{return false}});
+  const later=()=>{setDismissed(true);try{sessionStorage.setItem(INSTALL_DISMISS_KEY,'1')}catch{}};
+  if(installed||dismissed||(!canInstall&&!isIOS))return null;
+  const install=async()=>{const r=await promptInstall();if(r!=='unavailable')later()};
+  return <div className="install-banner" role="region" aria-label="Install application">
+    <img className="install-banner-icon" src="/icons/icon-192.png" alt="" width={40} height={40}/>
+    <div className="install-banner-body">
+      <b>Install Niyati Canteen</b>
+      <p>{canInstall?'Install this app for a faster, full-screen billing experience.':<>Tap <b>Share</b> → <b>Add to Home Screen</b> for a faster, full-screen billing experience.</>}</p>
+    </div>
+    <div className="install-banner-actions">
+      {canInstall&&<button type="button" className="primary" onClick={install}><Download size={15}/> Install App</button>}
+      <button type="button" className="secondary" onClick={later}>Later</button>
+    </div>
+  </div>;
+}
+function Shell({children}:any){const nav=navFor(boot.user);return <div className="app"><aside className="sidebar"><div className="brand"><img src="/icons/logo.png" alt="Niyati"/></div><nav>{nav.map(([key,Icon,label]:any)=><button className={boot.page===key?'active':''} onClick={()=>{closeSidebar();go(key)}} key={key}><Icon size={19}/><span>{label}</span></button>)}</nav><Form><input name="action" value="logout" type="hidden"/><button className="logout"><LogOut size={18}/><span>Logout</span></button></Form></aside><div className="sidebar-backdrop" onClick={closeSidebar}/><main className="main"><header className="topbar"><button type="button" className="menu-toggle" onClick={toggleSidebar} title="Toggle menu"><MenuIcon/></button><div className="topbar-right"><FullscreenButton/><AccountMenu/></div></header>{boot.flash.error&&<div className="alert error">{boot.flash.error}</div>}{boot.flash.success&&<div className="alert success">{boot.flash.success}</div>}{children}</main><InstallBanner/></div>}
 function AccountMenu(){
   const [open,setOpen]=useState(false); const [pwOpen,setPwOpen]=useState(false);
   const boxRef=useRef<HTMLDivElement>(null);

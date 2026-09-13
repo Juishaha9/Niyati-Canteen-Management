@@ -1,4 +1,4 @@
-const CACHE='canteen-shell-v2';
+const CACHE='canteen-shell-v3';
 // Menu/logo/avatar images live in their own cache store, independent of the
 // app-shell cache above — bumping CACHE on a redeploy must never evict
 // already-downloaded menu images, and this name is not versioned in lockstep
@@ -7,7 +7,7 @@ const CACHE='canteen-shell-v2';
 // content-immutable by construction and safe to serve forever without
 // revalidation; a replaced image simply arrives under a different URL.
 const MEDIA_CACHE='canteen-media-v1';
-const SHELL=['/','/assets/app.js','/assets/app.css','/manifest.webmanifest','/icons/icon-192.svg'];
+const SHELL=['/','/assets/app.js','/assets/app.css','/manifest.webmanifest','/icons/icon-192.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE&&k!==MEDIA_CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{
