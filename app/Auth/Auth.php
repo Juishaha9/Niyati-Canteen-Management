@@ -20,8 +20,28 @@ final class Auth {
         $identifier = trim($identifier);
         if ($identifier === '') return false;
         $mobileDigits = preg_replace('/\D+/', '', $identifier) ?? '';
-        $stmt = $db->prepare('SELECT u.*, r.code AS role FROM users u JOIN roles r ON r.id=u.role_id WHERE u.active=1 AND (u.email=? OR u.display_name=? OR (?<>\'\' AND u.mobile=?)) LIMIT 2');
-        $stmt->execute([$identifier, $identifier, $mobileDigits, $mobileDigits]);
+        // Whether to try matching on mobile at all is decided here in PHP,
+        // not with a "(?<>'' AND u.mobile=?)" comparison inside the SQL —
+        // that used to guard against a non-phone-shaped identifier (e.g. an
+        // email) spuriously matching a row via the mobile branch. On a
+        // production DB where the users table's actual stored collation
+        // (utf8mb4_unicode_ci, matching this project's schema — see
+        // database/migrations/012_standardize_user_collation.sql) differed
+        // from whatever the DB connection defaulted to on that host,
+        // comparing two connection-collation strings to each other with
+        // '<>' triggered MySQL error 1267 ("Illegal mix of collations...for
+        // operation '<>'"), a class of bug that only surfaces once the two
+        // happen to disagree — which they never did locally. Branching in
+        // PHP removes that comparison from the SQL entirely; the matching
+        // behavior (mobile is only ever tried when the identifier actually
+        // contains digits) is unchanged.
+        if ($mobileDigits !== '') {
+            $stmt = $db->prepare('SELECT u.*, r.code AS role FROM users u JOIN roles r ON r.id=u.role_id WHERE u.active=1 AND (u.email=? OR u.display_name=? OR u.mobile=?) LIMIT 2');
+            $stmt->execute([$identifier, $identifier, $mobileDigits]);
+        } else {
+            $stmt = $db->prepare('SELECT u.*, r.code AS role FROM users u JOIN roles r ON r.id=u.role_id WHERE u.active=1 AND (u.email=? OR u.display_name=?) LIMIT 2');
+            $stmt->execute([$identifier, $identifier]);
+        }
         $rows = $stmt->fetchAll();
         if (count($rows) !== 1) return false;
         $user = $rows[0];
