@@ -1067,10 +1067,60 @@ tbody tr:hover{background:var(--bg)}
   .table-widgets{grid-template-columns:minmax(0,1fr)}
 }
 .print-bill{display:none}
+/* Bill receipt layout/typography is deliberately NOT scoped to @media
+   print. The element stays display:none on screen (rule above) and only
+   flips to display:block for an actual print (see @media print below), so
+   none of this is ever visible outside a print context — but keeping the
+   sizing rules unconditional lets printThermalBill() (main.tsx) briefly
+   force the element visible off-screen right before printing to MEASURE
+   its true rendered height in mm and inject an exact `@page{size:80mm
+   Xmm}` for that job. That measurement is only possible if these rules
+   apply without needing @media print to already be active. */
+.print-bill{width:100%;max-width:80mm;margin:0 auto;padding:0 3mm;box-sizing:border-box;font-family:'Courier New',monospace;color:#000;font-size:12px}
+.bill-head{text-align:center;margin-bottom:8px}
+.bill-logo{display:block;margin:0 auto 6px;max-height:52px;max-width:120px;object-fit:contain}
+.bill-head h2{margin:0 0 4px;font-size:16px;font-weight:700;letter-spacing:.5px}
+.bill-head p{margin:2px 0;font-size:11px}
+.bill-meta{border-top:1px dashed #000;border-bottom:1px dashed #000;padding:5px 0;margin-bottom:6px}
+.bill-meta div{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:1px 0}
+/* An HTML <table> with table-layout:fixed was found (via real Chrome print
+   testing, not just automated tooling) to still let a nowrap numeric cell
+   push the AMOUNT column outside the receipt in some print rendering
+   passes. CSS Grid doesn't carry that legacy table-layout ambiguity: a
+   percentage track combined with minmax(0,%) is a hard cap the grid
+   algorithm cannot exceed, and min-width:0 on each cell is what actually
+   lets that cap win over the cell's own content width (the same
+   1fr-without-minmax(0,1fr) pitfall responsible for nearly every other
+   overflow bug fixed across this app — table-layout:fixed simply didn't
+   expose an equivalent escape hatch). Percentages are resolved against the
+   grid's content box *after* column-gap is reserved, so a 3px gap here
+   cannot push the total past 100%. */
+.bill-table{width:100%;box-sizing:border-box;margin-bottom:6px}
+.bill-row{display:grid;grid-template-columns:minmax(0,38%) minmax(0,12%) minmax(0,23%) minmax(0,27%);column-gap:3px;width:100%;box-sizing:border-box;font-size:11px;padding:2px 0}
+.bill-table-head{border-bottom:1px dashed #000;font-weight:700}
+.bill-row>span{min-width:0;overflow:hidden;box-sizing:border-box}
+.bill-row>span:nth-child(1){text-align:left;overflow-wrap:anywhere;word-break:break-word}
+.bill-row>span:nth-child(2){text-align:center}
+.bill-row>span:nth-child(3),.bill-row>span:nth-child(4){text-align:right;white-space:nowrap}
+/* Safety valve: a large amount (₹10,000.00+) at 27% of an 80mm column can
+   get tight. Shrinking just these two numeric columns' font slightly (not
+   the whole receipt) keeps big totals from ever being clipped or pushed
+   past the column, without touching layout/format elsewhere. */
+.bill-row>span:nth-child(3),.bill-row>span:nth-child(4){font-size:10.5px}
+.bill-row{page-break-inside:avoid;break-inside:avoid}
+.bill-totals{border-top:1px dashed #000;padding-top:5px}
+.bill-totals div{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:1px 0}
+.bill-totals div>span{min-width:0}
+.bill-totals div>b{white-space:nowrap;flex-shrink:0}
+.bill-totals .grand{border-top:1px solid #000;margin-top:4px;padding-top:4px;font-size:14px;font-weight:700}
+.bill-footer{text-align:center;margin-top:10px;font-size:11px}
 @media print{
+  /* Document-style print default (Reports etc.). The bill receipt needs a
+     dynamic page height, computed per print job from the receipt's actual
+     rendered height (see printThermalBill in main.tsx) and injected as a
+     one-off <style>@page{size:80mm Xmm;margin:0}</style>, removed again on
+     afterprint — this block stays A4 for every other page. */
   @page{size:A4;margin:14mm}
-  @page bill{size:A5;margin:8mm}
-  .print-bill{page:bill}
   html,body{height:auto!important;width:auto!important;overflow:visible!important}
   .app{display:block!important;min-height:0!important}
   .main{margin:0!important;width:100%!important;padding:0!important;max-width:none!important;min-height:0!important}
@@ -1084,22 +1134,5 @@ tbody tr:hover{background:var(--bg)}
   .reports-print-head h1{margin:0 0 4px;font-size:19px;letter-spacing:-.01em}
   .reports-print-head p{margin:0;font-size:12px;color:#555;font-weight:600}
   .report-section-title{page-break-after:avoid}
-  .print-bill{display:block;width:100%;max-width:340px;margin:0 auto;font-family:'Courier New',monospace;color:#000;font-size:12px;page-break-after:avoid;page-break-inside:avoid}
-  .bill-head{text-align:center;margin-bottom:8px}
-  .bill-logo{display:block;margin:0 auto 6px;max-height:52px;max-width:120px;object-fit:contain}
-  .bill-head h2{margin:0 0 4px;font-size:16px;letter-spacing:.5px}
-  .bill-head p{margin:2px 0;font-size:11px}
-  .bill-meta{border-top:1px dashed #000;border-bottom:1px dashed #000;padding:5px 0;margin-bottom:6px}
-  .bill-meta div{display:flex;justify-content:space-between;font-size:11px;padding:1px 0}
-  .bill-table{width:100%;border-collapse:collapse;margin-bottom:6px}
-  .bill-table th{text-align:left;border-bottom:1px dashed #000;padding:2px}
-  .bill-table th,.bill-table td{font-size:11px}
-  .bill-table th:nth-child(2),.bill-table th:nth-child(3),.bill-table th:nth-child(4){text-align:right}
-  .bill-table td{padding:2px;vertical-align:top}
-  .bill-table td:nth-child(2),.bill-table td:nth-child(3),.bill-table td:nth-child(4){text-align:right;white-space:nowrap}
-  .bill-table tr{page-break-inside:avoid}
-  .bill-totals{border-top:1px dashed #000;padding-top:5px}
-  .bill-totals div{display:flex;justify-content:space-between;font-size:11px;padding:1px 0}
-  .bill-totals .grand{border-top:1px solid #000;margin-top:4px;padding-top:4px;font-size:13px;font-weight:700}
-  .bill-footer{text-align:center;margin-top:10px;font-size:11px}
+  .print-bill{display:block}
 }

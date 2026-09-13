@@ -3,6 +3,42 @@
 import React,{useMemo,useState,useEffect,useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {LayoutDashboard,Table2,Package,ClipboardList,ReceiptText,Utensils,Tags,Users,BarChart3,Percent,Gift,History,Settings,LogOut,Plus,Minus,Search,Printer,IndianRupee,ChevronRight,ChevronDown,Menu as MenuIcon,TrendingUp,XCircle,Pencil,X,Trash2,CheckCircle2,Clock,RotateCcw,Wallet,Smartphone,Coffee,Sunrise,Soup,UtensilsCrossed,Salad,GlassWater,ChefHat,Star,Sandwich,MoreVertical,Eye,Info,ShieldCheck,RefreshCw,AlertTriangle,User,KeyRound,Camera} from 'lucide-react'; import '../css/app.css'; import type {Boot,AnyRecord} from './types';
 declare global{interface Window{__CANTEEN__:Boot}} const boot=window.__CANTEEN__; const money=(v:any)=>'₹'+Number(v||0).toFixed(2); const go=(p:string)=>location.href='/'+p; const Form=({children,method='post',...p}:any)=><form method={method} {...p}>{method==='post'&&<input type="hidden" name="_csrf" value={boot.csrf}/>} {children}</form>; const toggleSidebar=()=>document.querySelector('.sidebar')?.classList.toggle('collapsed');
 const settingOn=(k:string,def=true)=>{const v=(boot.data as any)?.settings?.[k];return v===undefined?def:v==='1'};
+const applyThermalPageSize=()=>{
+  // Chrome doesn't reliably size a print page from `@page{size:80mm auto}`,
+  // so measure the receipt's real rendered height and inject an exact
+  // `@page{size:80mm Xmm}` for this print job instead of leaving a tall
+  // fixed page with blank space below a short bill. Bound to `beforeprint`
+  // (see OrderEditor) rather than only the print button's onClick, so this
+  // also fires for Ctrl+P / the browser's own Print menu — any trigger a
+  // user might reach for, not just the in-app button.
+  const bill=document.querySelector('.print-bill') as HTMLElement|null;
+  if(!bill)return;
+  const prev={display:bill.style.display,position:bill.style.position,visibility:bill.style.visibility,left:bill.style.left,top:bill.style.top};
+  bill.style.setProperty('display','block','important');
+  bill.style.setProperty('position','fixed','important');
+  bill.style.setProperty('visibility','hidden','important');
+  bill.style.setProperty('left','-9999px','important');
+  bill.style.setProperty('top','0','important');
+  const heightPx=bill.getBoundingClientRect().height;
+  const heightMm=Math.max(30,Math.ceil(heightPx*25.4/96)+4);
+  bill.style.display=prev.display; bill.style.position=prev.position; bill.style.visibility=prev.visibility; bill.style.left=prev.left; bill.style.top=prev.top;
+  let style=document.getElementById('thermal-page-style') as HTMLStyleElement|null;
+  if(!style){style=document.createElement('style'); style.id='thermal-page-style'; document.head.appendChild(style)}
+  // Chrome's print pipeline resolves .print-bill's percentage/auto margins
+  // against html/body's width, not the @page size above — if that ends up
+  // wider than 80mm (observed in practice), centering the receipt then
+  // shoves it sideways far enough to clip the rightmost table column off
+  // the physical page. Pinning html/body to 80mm too (print-only, scoped to
+  // this same removable style tag) keeps that containing block accurate.
+  style.textContent=`@page{size:80mm ${heightMm}mm;margin:0}@media print{html,body{width:80mm!important;max-width:80mm!important}}`;
+};
+const clearThermalPageSize=()=>{document.getElementById('thermal-page-style')?.remove()};
+// One click, straight into Chrome's normal print flow — no popup window.
+// The 4-column receipt bug earlier was the <table>/table-layout:fixed
+// rendering itself (fixed by switching to CSS Grid), not same-document
+// printing, so there's no remaining reason to isolate the print job in a
+// separate window.
+const printThermalBill=()=>{applyThermalPageSize(); window.print()};
 const hasPermission=(code:string)=>boot.user.role==='ADMIN'||(boot.user.permissions||[]).includes(code);
 const logoSrc=(path?:string)=>path?`/?media=${encodeURIComponent(path)}`:null;
 const MENU_IMAGE_MAP:Record<string,string>={'tea':'tea.webp','special tea':'special tea.webp','coffee':'coffee.webp','milk':'milk.webp','pohe':'pohe.webp','upit':'upit.webp','sheera':'sheera.webp','kurma puri':'kurma puri.webp','kolhapuri misal':'kolhapuri misal.webp','vada pav':'vada pav.webp','dahi vada':'dahi vada.webp','kat vada':'kat vada.webp','mirchi bajji':'mirchi bajji.webp','idli sambar':'idli sambar.webp','masala dosa':'masala dosa.webp','plain dosa':'plain dosa.webp','sponge dosa':'sponge dosa.webp','onion uttapam':'onion uttapam.webp','tomato omelette':'tomato omelette.webp','medu vada sambar':'medu vada sambar.webp','paper dosa':'paper dosa.webp','idli vada sambar':'idli vada sambar.webp','rice plate':'rice-plate.webp','jhunka bhakri':'zunka-bhakri.webp','shalu khichdi':'sabudana-khichdi.webp','tak':'taak.webp','lassi':'lassi.webp','paani':'water-bottle.webp','cold drinks':'cold-drink-bottles.webp','veg manchurian':'veg-manchurian.webp','veg noodles':'veg-noodles.webp','pulav':'pulav.webp','samosa':'samosa.webp'};
@@ -262,7 +298,12 @@ function TableModal({kind,editing,onClose}:any){useEffect(()=>{const onKey=(e:Ke
 function Order(){const d=boot.data;if(d.missing)return <Shell><div className="surface">Order not found.</div></Shell>;return <Shell><OrderEditor order={d.order} menu={d.menu||[]} variants={d.variants||[]} initial={d.items||[]} settings={d.settings||{}}/></Shell>}
 function OrderEditor({order,menu,variants,initial,settings}:any){
   const [items,setItems]=useState(initial.map((x:any)=>({...x,menu_item_id:Number(x.menu_item_id),variant_id:x.menu_item_variant_id?Number(x.menu_item_variant_id):null,complementary:Number(x.complementary_amount)>0,discount_type:x.item_discount_type||'NONE',discount_value:x.item_discount_value||''})));
-  useEffect(()=>{if(new URLSearchParams(location.search).get('print')==='1'){const t=setTimeout(()=>window.print(),300);return()=>clearTimeout(t)}},[]);
+  useEffect(()=>{if(new URLSearchParams(location.search).get('print')==='1'){const t=setTimeout(printThermalBill,300);return()=>clearTimeout(t)}},[]);
+  useEffect(()=>{
+    window.addEventListener('beforeprint',applyThermalPageSize);
+    window.addEventListener('afterprint',clearThermalPageSize);
+    return()=>{window.removeEventListener('beforeprint',applyThermalPageSize);window.removeEventListener('afterprint',clearThermalPageSize);clearThermalPageSize()};
+  },[]);
   const [query,setQuery]=useState(''); const [category,setCategory]=useState('All');
   const [discountType,setDiscountType]=useState('NONE'); const [discountValue,setDiscountValue]=useState(''); const [discountReason,setDiscountReason]=useState('');
   const [compReasonChoice,setCompReasonChoice]=useState('Staff Meal'); const [compReasonOther,setCompReasonOther]=useState('');
@@ -295,7 +336,7 @@ function OrderEditor({order,menu,variants,initial,settings}:any){
   const pending=order.discount_approval_status==='PENDING';
   return <div className="order-layout"><section className="menu-area"><div className="order-meta"><div><span>{order.table_name}</span><b>{order.order_number}</b></div><small>Opened {new Date(order.created_at).toLocaleString()} by {order.created_by_name}</small></div><div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search menu or category"/></div><div className="chips order-category-chips">{cats.map(c=><button className={c===category?'selected':''} onClick={()=>setCategory(c)} key={c}>{c}</button>)}</div><div className="menu-scroll"><div className="menu-grid">{filtered.map((m:any)=>{const vs=variants.filter((v:any)=>v.menu_item_id===m.id);return <article className="food-card" key={m.id} onClick={()=>!vs.length&&m.price!==null&&add(m)}><img loading="lazy" src={menuImageSrc(m)} alt=""/><div><h3>{m.name}</h3><small>{m.description||m.category_name}</small>{vs.length?<div className="variant-buttons">{vs.map((v:any)=><button type="button" onClick={e=>{e.stopPropagation();add(m,v)}} key={v.id}>{v.name} {money(v.price)}</button>)}</div>:<b>{m.price===null?'Configure price':money(m.price)}</b>}</div></article>})}</div></div></section>
   <aside className="cart">
-    <div className="cart-head"><div><small>Current order</small><h2>{items.length} item{items.length===1?'':'s'}</h2></div><button className="icon" title="Print bill" onClick={()=>window.print()}><Printer size={19}/></button></div>
+    <div className="cart-head"><div><small>Current order</small><h2>{items.length} item{items.length===1?'':'s'}</h2></div><button className="icon" title="Print bill" onClick={printThermalBill}><Printer size={19}/></button></div>
     {pending&&<div className="alert warning">This bill's discount is pending {isApprover?'your':'admin/manager'} approval and cannot be paid until it is resolved.
       {isApprover&&<div className="form-actions">
         <Form><input type="hidden" name="action" value="discount_approve"/><input type="hidden" name="order_id" value={order.id}/><button className="secondary" type="submit">Approve discount</button></Form>
@@ -338,7 +379,15 @@ function OrderEditor({order,menu,variants,initial,settings}:any){
     {order.status==='OPEN'&&(pending?<p className="muted">Payment is blocked while a discount is pending approval.</p>:<Form className="pay-form"><input type="hidden" name="action" value="order_pay"/><input type="hidden" name="order_id" value={order.id}/>{String(settings.payment_methods||'CASH,UPI').split(',').filter(Boolean).map((m:string)=><button className="primary" name="method" value={m} key={m}>Pay {m==='CASH'?'cash':m==='UPI'?'UPI':m.charAt(0)+m.slice(1).toLowerCase()}</button>)}</Form>)}
     {hasPermission('cancel_orders')&&settingOn('allow_order_cancellation')&&<details className="cancel"><summary>Cancel this bill</summary><Form onSubmit={(e:any)=>{if(settingOn('confirm_cancel_bill')&&!confirm('Cancel this bill? This will be recorded in cancelled bills history.'))e.preventDefault()}}><input type="hidden" name="action" value="order_cancel"/><input type="hidden" name="order_id" value={order.id}/><input name="reason" required={settingOn('require_cancellation_reason')} placeholder="Cancellation reason"/><button className="danger">Cancel bill</button></Form></details>}
   </aside>
-  <div className="print-bill"><div className="bill-head">{settingOn('show_logo_on_bill')&&settings.logo_path&&<img className="bill-logo" src={logoSrc(settings.logo_path)} alt=""/>}<h2>{settings.canteen_name||'Canteen'}</h2>{settings.address&&<p>{settings.address}</p>}{settings.phone&&<p>Ph: {settings.phone}</p>}{settings.gst_number&&<p>GSTIN: {settings.gst_number}</p>}</div><div className="bill-meta"><div><span>Bill No</span><b>{order.order_number}</b></div>{settingOn('show_table_number')&&<div><span>Table</span><b>{order.table_name}</b></div>}<div><span>Date</span><b>{new Date().toLocaleString()}</b></div>{settingOn('show_waiter_name')&&<div><span>Served by</span><b>{order.created_by_name}</b></div>}</div><table className="bill-table"><thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>{items.map((x:any,i:number)=>{const gross=Number(x.unit_price)*Number(x.quantity);const lineDiscount=itemDiscountAmount(x,gross);return <tr key={i}><td>{x.item_name_snapshot}{x.variant_name_snapshot?` (${x.variant_name_snapshot})`:''}{x.complementary?' - Complementary':''}</td><td>{x.quantity}</td><td>{money(x.unit_price)}</td><td>{x.complementary?money(0):money(gross-lineDiscount)}</td></tr>})}</tbody></table><div className="bill-totals"><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{comp>0&&<div><span>Complementary</span><b>-{money(comp)}</b></div>}{totalDiscount>0&&<div><span>Discount</span><b>-{money(totalDiscount)}</b></div>}<div className="grand"><span>Grand Total</span><b>{money(total)}</b></div></div>{settingOn('show_thank_you_message')&&<p className="bill-footer">{settings.thank_you_message||'Thank you. Visit again.'}</p>}</div></div>
+  <div className="print-bill"><div className="bill-head">{settingOn('show_logo_on_bill')&&settings.logo_path&&<img className="bill-logo" src={logoSrc(settings.logo_path)} alt=""/>}<h2>{settings.canteen_name||'Canteen'}</h2>{settings.address&&<p>{settings.address}</p>}{settings.phone&&<p>Ph: {settings.phone}</p>}{settings.gst_number&&<p>GSTIN: {settings.gst_number}</p>}</div><div className="bill-meta"><div><span>Bill No</span><b>{order.order_number}</b></div>{settingOn('show_table_number')&&<div><span>Table</span><b>{order.table_name}</b></div>}<div><span>Date</span><b>{new Date().toLocaleString()}</b></div>{settingOn('show_waiter_name')&&<div><span>Served by</span><b>{order.created_by_name}</b></div>}</div><div className="bill-table">
+            <div className="bill-row bill-table-head"><span>Item</span><span>Qty</span><span>Rate</span><span>Amount</span></div>
+            {items.map((x:any,i:number)=>{const gross=Number(x.unit_price)*Number(x.quantity);const lineDiscount=itemDiscountAmount(x,gross);return <div className="bill-row" key={i}>
+              <span>{x.item_name_snapshot}{x.variant_name_snapshot?` (${x.variant_name_snapshot})`:''}{x.complementary?' - Complementary':''}</span>
+              <span>{x.quantity}</span>
+              <span>{money(x.unit_price)}</span>
+              <span>{x.complementary?money(0):money(gross-lineDiscount)}</span>
+            </div>})}
+          </div><div className="bill-totals"><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{comp>0&&<div><span>Complementary</span><b>-{money(comp)}</b></div>}{totalDiscount>0&&<div><span>Discount</span><b>-{money(totalDiscount)}</b></div>}<div className="grand"><span>Grand Total</span><b>{money(total)}</b></div></div>{settingOn('show_thank_you_message')&&<p className="bill-footer">{settings.thank_you_message||'Thank you. Visit again.'}</p>}</div></div>
 }
 function DataTable({title,headers,rows,mobileRows,className}:any){return <section className={'surface data-table'+(className?' '+className:'')}><h2>{title}</h2><div className={'table-scroll'+(mobileRows?' data-table-scroll-wrap':'')}><table><thead><tr>{headers.map((h:string)=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows?.length?rows.map((r:any[],i:number)=><tr key={i}>{r.map((c:any,j:number)=><td key={j}>{c}</td>)}</tr>):<tr><td colSpan={headers.length} className="muted">No records found.</td></tr>}</tbody></table></div>{mobileRows&&<div className="data-table-cards">{mobileRows.length?mobileRows:<p className="muted">No records found.</p>}</div>}</section>}
 function ListPage(){const rows=boot.data.orders||[];const title=boot.page==='modified'?'Modified bills':'Bills';return <Shell><DataTable title={title} headers={['Reference','Table','Status','Total','Updated']} rows={rows.map((o:any)=>[<a href={'/order?id='+o.id}>{o.bill_number||o.order_number}</a>,o.table_name||'—',o.status+(o.modifications?` (${o.modifications} changes)`:''),money(o.grand_total),new Date(o.updated_at||o.completed_at||o.cancelled_at).toLocaleString()])}/></Shell>}
