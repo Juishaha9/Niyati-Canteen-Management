@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-$root=dirname(__DIR__); foreach([$root.'/.env', $root.'/.env.local'] as $file){if(is_file($file))foreach(file($file,FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES) as $line){if(str_starts_with(trim($line),'#')||!str_contains($line,'='))continue;[$k,$v]=explode('=',$line,2);putenv(trim($k).'='.trim($v));}}
+$root=__DIR__; foreach([$root.'/.env', $root.'/.env.local'] as $file){if(is_file($file))foreach(file($file,FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES) as $line){if(str_starts_with(trim($line),'#')||!str_contains($line,'='))continue;[$k,$v]=explode('=',$line,2);putenv(trim($k).'='.trim($v));}}
 // Every upload (menu_save/settings_save/profile_save) writes a brand-new
 // randomly-named file and never reuses an old one, so a filename that
 // matches these regexes is content-immutable by construction — safe to
