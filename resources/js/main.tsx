@@ -239,7 +239,13 @@ const printThermalBill=()=>{applyThermalPageSize(); window.print()};
 const hasPermission=(code:string)=>boot.user.role==='ADMIN'||(boot.user.permissions||[]).includes(code);
 const logoSrc=(path?:string)=>path?`/?media=${encodeURIComponent(path)}`:null;
 const MENU_IMAGE_MAP:Record<string,string>={'tea':'tea.webp','special tea':'special tea.webp','coffee':'coffee.webp','milk':'milk.webp','pohe':'pohe.webp','upit':'upit.webp','sheera':'sheera.webp','kurma puri':'kurma puri.webp','kolhapuri misal':'kolhapuri misal.webp','vada pav':'vada pav.webp','dahi vada':'dahi vada.webp','kat vada':'kat vada.webp','mirchi bajji':'mirchi bajji.webp','idli sambar':'idli sambar.webp','masala dosa':'masala dosa.webp','plain dosa':'plain dosa.webp','sponge dosa':'sponge dosa.webp','onion uttapam':'onion uttapam.webp','tomato omelette':'tomato omelette.webp','medu vada sambar':'medu vada sambar.webp','paper dosa':'paper dosa.webp','idli vada sambar':'idli vada sambar.webp','rice plate':'rice-plate.webp','jhunka bhakri':'zunka-bhakri.webp','shalu khichdi':'sabudana-khichdi.webp','tak':'taak.webp','lassi':'lassi.webp','paani':'water-bottle.webp','cold drinks':'cold-drink-bottles.webp','veg manchurian':'veg-manchurian.webp','veg noodles':'veg-noodles.webp','pulav':'pulav.webp','samosa':'samosa.webp'};
-const menuImageSrc=(m:any)=>{if(m.image_path)return `/?media=${encodeURIComponent(m.image_path)}`;const file=MENU_IMAGE_MAP[String(m.name||'').trim().toLowerCase()];return file?`/canteen_images/${encodeURIComponent(file)}`:'/assets/menu-fallback.png'};
+// image_path now always names a file the admin picked from the
+// server-controlled public/canteen_images/ library (never an upload — see
+// MenuImagePicker/menu_save) — same directory, same URL shape as the
+// MENU_IMAGE_MAP fallback below, so both branches resolve to a real static
+// file Apache serves directly from public/, with no dependency on any
+// particular host/port (works unchanged on XAMPP and production).
+const menuImageSrc=(m:any)=>{if(m.image_path)return `/canteen_images/${encodeURIComponent(m.image_path)}`;const file=MENU_IMAGE_MAP[String(m.name||'').trim().toLowerCase()];return file?`/canteen_images/${encodeURIComponent(file)}`:'/assets/menu-fallback.png'};
 const CATEGORY_ICON_MAP:Record<string,any>={'tea':Coffee,'coffee':Coffee,'tea & coffee':Coffee,'breakfast':Sunrise,'south indian':Soup,'maharashtrian':UtensilsCrossed,'meals':Salad,'drinks':GlassWater,'beverages':GlassWater,'chinese':ChefHat,'specials':Star,'snacks':Sandwich};
 const categoryIcon=(name:string)=>CATEGORY_ICON_MAP[String(name||'').trim().toLowerCase()]||Tags;
 const CATEGORY_COLORS=[['var(--primary-soft)','var(--primary-dark)'],['var(--teal-soft)','var(--c-teal)'],['var(--orange-soft)','#b8790a'],['var(--purple-soft)','var(--purple)'],['var(--c-magenta-soft)','var(--c-magenta)'],['var(--blue-soft)','var(--blue)']];
@@ -1241,6 +1247,37 @@ function ModifiedBillsPage(){
     {viewing&&<ChangesModal order={viewing} changes={allChanges.filter((c:any)=>String(c.order_id)===String(viewing.id))} onClose={()=>setViewing(null)}/>}
   </>;
 }
+// The menu image library is server-controlled (public/canteen_images/) and
+// fetched fresh from /menu?images=1 rather than hardcoded here — the same
+// endpoint menu_save itself re-validates a selection against, so the list
+// this picker shows and the list the server actually accepts can never
+// drift apart.
+function MenuImagePicker({onSelect,onClose}:any){
+  const [images,setImages]=useState<string[]|null>(null);
+  const [error,setError]=useState<string|null>(null);
+  useEffect(()=>{
+    let cancelled=false;
+    fetch('/menu?images=1',{credentials:'same-origin'}).then(r=>r.ok?r.json():Promise.reject())
+      .then(d=>{if(!cancelled)setImages(Array.isArray(d.images)?d.images:[])})
+      .catch(()=>{if(!cancelled)setError('Could not load the image library. Please try again.')});
+    return()=>{cancelled=true};
+  },[]);
+  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);
+  return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}>
+    <div className="modal-panel">
+      <div className="modal-head"><h2>Choose from canteen images</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div>
+      {error&&<div className="alert error">{error}</div>}
+      {!images&&!error&&<p className="muted">Loading images…</p>}
+      {images&&!images.length&&<p className="muted empty-state">No images found in the canteen image library.</p>}
+      {images&&images.length>0&&<div className="image-picker-grid">
+        {images.map((f:string)=><button type="button" className="image-picker-item" key={f} title={f} onClick={()=>onSelect(f)}>
+          <img src={`/canteen_images/${encodeURIComponent(f)}`} alt="" loading="lazy"/>
+          <span>{f}</span>
+        </button>)}
+      </div>}
+    </div>
+  </div>;
+}
 function MenuModal({editing,categories,onClose}:any){
   useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);
   useEffect(()=>{
@@ -1248,35 +1285,40 @@ function MenuModal({editing,categories,onClose}:any){
     document.body.style.overflow='hidden'; document.documentElement.style.overflow='hidden';
     return()=>{document.body.style.overflow=prevBody; document.documentElement.style.overflow=prevHtml};
   },[]);
-  const [fileName,setFileName]=useState('');
-  const [preview,setPreview]=useState<string|null>(null);
-  // Revokes the previous object URL whenever a new file is chosen, and the
-  // current one on unmount — object URLs are otherwise never freed and leak
-  // for the life of the page.
-  useEffect(()=>{return()=>{if(preview)URL.revokeObjectURL(preview)}},[preview]);
+  const [imagePath,setImagePath]=useState(editing?.image_path||'');
+  const [showPicker,setShowPicker]=useState(false);
   const deleteFormRef=useRef<HTMLFormElement>(null);
   const onDelete=(e:any)=>{if(confirm(`Delete "${editing.name}"?\nThis action cannot be undone.`)){startButtonLoading(e.currentTarget,'Deleting');deleteFormRef.current?.requestSubmit()}};
   return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}>
     <div className="modal-panel menu-modal">
       <div className="modal-head"><h2>{editing?`Edit "${editing.name}"`:'Add menu item'}</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div>
       {editing&&<form ref={deleteFormRef} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="menu_delete"/><input type="hidden" name="id" value={editing.id}/></form>}
-      <Form encType="multipart/form-data" key={editing?.id||'new'}>
+      <Form key={editing?.id||'new'}>
         <input type="hidden" name="action" value="menu_save"/>
         <input type="hidden" name="id" value={editing?.id||0}/>
+        <input type="hidden" name="image_path" value={imagePath}/>
         <div className="form-grid">
           <label>Name<input name="name" required defaultValue={editing?.name||''}/></label>
           <label>Category<select name="category_id" defaultValue={editing?.category_id||''}>{categories.map((c:any)=><option value={c.id} key={c.id}>{c.name}</option>)}</select></label>
           <label>Price<input name="price" type="number" step="0.01" min="0" defaultValue={editing?.price??''}/></label>
           <label>Display order<input name="sort_order" type="number" defaultValue={editing?.sort_order??0}/></label>
           <label className="wide">WebP image
-            {editing&&<small className="current-image-hint">Leave blank to keep the current image</small>}
-            <div className="file-upload">
-              <input name="image" type="file" accept="image/webp" className="file-upload-input" onChange={(e:any)=>{const f=e.target.files?.[0];setFileName(f?f.name:'');setPreview(f?URL.createObjectURL(f):null)}}/>
-              <div className="file-upload-visual">
-                {preview?<img src={preview} alt="" className="file-upload-preview"/>:<Camera size={20}/>}
-                <span className="file-upload-text">{fileName?<><CheckCircle2 size={14}/> {fileName}</>:'Upload WebP image'}</span>
+            {imagePath?
+              <div className="image-picker-selected">
+                <img src={`/canteen_images/${encodeURIComponent(imagePath)}`} alt="" className="image-picker-selected-thumb"/>
+                <div className="image-picker-selected-info">
+                  <span className="image-picker-selected-name">{imagePath}</span>
+                  <div className="image-picker-selected-actions">
+                    <button type="button" className="secondary" onClick={()=>setShowPicker(true)}>Change image</button>
+                    <button type="button" className="secondary" onClick={()=>setImagePath('')}>Remove</button>
+                  </div>
+                </div>
               </div>
-            </div>
+            :
+              <button type="button" className="file-upload" onClick={()=>setShowPicker(true)}>
+                <div className="file-upload-visual"><Camera size={20}/><span className="file-upload-text">Choose from canteen images</span></div>
+              </button>
+            }
           </label>
           <label className="wide">Description<textarea name="description" defaultValue={editing?.description||''}/></label>
         </div>
@@ -1286,6 +1328,7 @@ function MenuModal({editing,categories,onClose}:any){
           {editing&&<button type="button" className="danger" onClick={onDelete}><Trash2 size={14}/> Delete menu item</button>}
         </div>
       </Form>
+      {showPicker&&<MenuImagePicker onSelect={(f:string)=>{setImagePath(f);setShowPicker(false)}} onClose={()=>setShowPicker(false)}/>}
     </div>
   </div>;
 }
