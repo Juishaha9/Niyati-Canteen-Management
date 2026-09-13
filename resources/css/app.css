@@ -480,6 +480,9 @@ tbody tr:hover{background:var(--bg)}
 .main-loading-overlay{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:calc(100vh - var(--header-h) - 80px);min-height:calc(100dvh - var(--header-h) - 80px)}
 .main-loading-spinner{width:34px;height:34px;border-radius:50%;border:3px solid var(--primary-soft);border-top-color:var(--primary);animation:btn-spin .7s linear infinite}
 .main-loading-overlay span:last-child{color:var(--text-muted);font-weight:600;font-size:13px}
+.main-error-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:calc(100vh - var(--header-h) - 80px);min-height:calc(100dvh - var(--header-h) - 80px);text-align:center;color:var(--text-muted)}
+.main-error-state svg{color:#b8790a}
+.main-error-state p{margin:0;font-weight:600;font-size:13.5px;max-width:320px}
 
 .form-panel{margin-top:24px}
 .form-panel .form-actions{margin-top:18px}

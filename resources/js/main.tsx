@@ -1,8 +1,64 @@
 // The dynamic page payload is server-shaped; runtime validation remains authoritative in PHP.
 // @ts-nocheck
 import React,{useMemo,useState,useEffect,useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {LayoutDashboard,Table2,Package,ClipboardList,ReceiptText,Utensils,Tags,Users,BarChart3,Percent,Gift,History,Settings,LogOut,Plus,Minus,Search,Printer,IndianRupee,ChevronRight,ChevronDown,Menu as MenuIcon,TrendingUp,XCircle,Pencil,X,Trash2,CheckCircle2,Clock,RotateCcw,Wallet,Smartphone,Coffee,Sunrise,Soup,UtensilsCrossed,Salad,GlassWater,ChefHat,Star,Sandwich,MoreVertical,Eye,Info,ShieldCheck,RefreshCw,AlertTriangle,User,KeyRound,Camera,Maximize2,Minimize2,Download} from 'lucide-react'; import '../css/app.css'; import type {Boot,AnyRecord} from './types';
-declare global{interface Window{__CANTEEN__:Boot}} const boot=window.__CANTEEN__; const money=(v:any)=>'₹'+Number(v||0).toFixed(2); const go=(p:string)=>{location.href='/'+p}; const Form=({children,method='post',...p}:any)=><form method={method} {...p}>{method==='post'&&<input type="hidden" name="_csrf" value={boot.csrf}/>} {children}</form>; const toggleSidebar=()=>document.querySelector('.sidebar')?.classList.toggle('collapsed');
+declare global{interface Window{__CANTEEN__:Boot}} const boot=window.__CANTEEN__; const money=(v:any)=>'₹'+Number(v||0).toFixed(2); const Form=({children,method='post',...p}:any)=><form method={method} {...p}>{method==='post'&&<input type="hidden" name="_csrf" value={boot.csrf}/>} {children}</form>; const toggleSidebar=()=>document.querySelector('.sidebar')?.classList.toggle('collapsed');
 const settingOn=(k:string,def=true)=>{const v=(boot.data as any)?.settings?.[k];return v===undefined?def:v==='1'};
+
+// ===== Persistent client-side module navigation =====
+// The authenticated app used to change modules via location.href — a real
+// browser navigation that destroys and recreates the whole document. That
+// meant Fullscreen API state (tied to the document itself) always dropped
+// on every module switch, and the sidebar/logo/topbar were torn down and
+// rebuilt every time even though nothing about them had changed.
+// PHP/MySQL remain the sole source of truth for every module — this layer
+// changes ONLY the transport: instead of letting the browser navigate to a
+// URL, it fetches that exact same URL (the exact same route, same
+// PageDataService call, same auth/session checks, same HTML response
+// app.php already renders for a normal GET) and reads the very
+// window.__CANTEEN__ payload that response embeds — the same object the
+// whole app already reads everywhere via the module-level `boot` const.
+// boot's OWN PROPERTIES are mutated in place (Object.assign), not
+// reassigned, so every existing component that already does boot.data /
+// boot.page / boot.user / boot.csrf keeps working completely unchanged;
+// they just see fresh values on the next render. There is exactly one
+// long-lived subscriber (the top-level AuthenticatedApp component below),
+// notified via these two plain callbacks rather than React context, since
+// this is the only cross-cutting signal needed and every page component
+// already reads `boot` as a bare module global.
+let notifyNav:((loading:boolean,error:string|null)=>void)|null=null;
+let notifyBootChanged:(()=>void)|null=null;
+let navSeq=0;
+let lastNavUrl='';
+function clientNavigate(url:string,init?:any,push=true){
+  const seq=++navSeq;
+  lastNavUrl=url;
+  notifyNav&&notifyNav(true,null);
+  fetch(url,{credentials:'same-origin',...(init||{})}).then(async(res:any)=>{
+    const html=await res.text();
+    if(seq!==navSeq)return; // superseded by a newer navigation - discard this stale response
+    const m=html.match(/window\.__CANTEEN__=(\{[\s\S]*?\});<\/script>/);
+    if(!m){
+      // Not an authenticated-shell response — most likely the session
+      // expired and the server served the login page instead. Never
+      // render that fetched markup in place of the current module (that
+      // would either show nothing useful or risk a confusing blank
+      // state); a hard navigation is the correct, safe way to land the
+      // user back on the real login flow with zero protected data ever
+      // touched.
+      location.href=res.url||url;
+      return;
+    }
+    const newBoot=JSON.parse(m[1]);
+    Object.assign(boot,newBoot);
+    if(push){try{const u=new URL(res.url||url,location.href);history.pushState({},'',u.pathname+u.search);}catch{}}
+    notifyNav&&notifyNav(false,null);
+    notifyBootChanged&&notifyBootChanged();
+  }).catch(()=>{
+    if(seq!==navSeq)return;
+    notifyNav&&notifyNav(false,'Could not load this page. Check your connection and try again.');
+  });
+}
+const go=(p:string)=>clientNavigate('/'+p);
 
 // ===== System-wide loading/processing UX layer =====
 // This app has no client-side router or fetch-driven data loading — every
@@ -67,10 +123,53 @@ if(boot&&typeof document!=='undefined'){
   // the authenticated app's own navigation/form UX — the login page (which
   // has no window.__CANTEEN__) mounts only <InstallBanner/> below and keeps
   // its own separate, pre-existing submit handling untouched.
+  //
+  // Every existing <form method="post"> (whether built via the <Form>
+  // component or, in one place, by hand for an auto-submitting table
+  // card) still POSTs to the exact same PHP action with the exact same
+  // fields/CSRF token — none of that changes. What changes is only what
+  // happens with the *response*: instead of letting the browser follow
+  // the server's redirect as a real navigation, this fetches it, so
+  // clientNavigate can read the resulting page's own boot payload and
+  // swap the module in place. FormData(form, submitter) — not just
+  // FormData(form) — is what correctly includes the clicked submit
+  // button's own name/value (e.g. Pay's method=CASH/UPI), matching what
+  // a native submit would have sent.
   document.addEventListener('submit',(e:any)=>{
     if(e.defaultPrevented)return; // a component's own validation already blocked this submit
+    const form=e.target as HTMLFormElement;
     const submitter=e.submitter as HTMLButtonElement|undefined;
     if(submitter&&submitter.tagName==='BUTTON')startButtonLoading(submitter);
+    e.preventDefault();
+    const fd=new FormData(form,submitter);
+    // form.action/form.method (the DOM properties) are NOT safe here: per
+    // the HTML spec, a <form> exposes its own named controls as properties
+    // of the same name ("named element access"), so on any form with an
+    // <input name="action"> (i.e. every action-based form in this app) or
+    // a <button name="method"> (the Pay form), form.action/form.method
+    // resolve to THAT control element instead of the URL/method string.
+    // The raw attributes are unaffected by this shadowing.
+    const actionUrl=form.getAttribute('action')||location.href;
+    const methodAttr=(form.getAttribute('method')||'post').toLowerCase();
+    if(methodAttr==='get'){
+      const qs=new URLSearchParams(fd as any).toString();
+      clientNavigate(actionUrl.split('?')[0]+(qs?'?'+qs:''));
+    }else{
+      clientNavigate(actionUrl,{method:'POST',body:fd});
+    }
+  });
+  // Same-origin link navigation (an order row, "View Cancelled Bills",
+  // etc.) — anything not opting out via target="_blank", a download
+  // attribute, a modifier-key click, or its own preventDefault().
+  document.addEventListener('click',(e:MouseEvent)=>{
+    if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+    const a=(e.target as HTMLElement)?.closest?.('a[href]') as HTMLAnchorElement|null;
+    if(!a||a.target==='_blank'||a.hasAttribute('download'))return;
+    let url:URL;
+    try{url=new URL(a.href,location.href)}catch{return}
+    if(url.origin!==location.origin)return;
+    e.preventDefault();
+    clientNavigate(url.pathname+url.search);
   });
 }
 // Reusable pattern for the handful of client-only actions that aren't a
@@ -222,7 +321,12 @@ function InstallBanner(){
     </div>
   </div>;
 }
-function Shell({children}:any){const nav=navFor(boot.user);return <div className="app"><aside className="sidebar"><div className="brand"><img src="/icons/logo.png" alt="Niyati"/></div><nav>{nav.map(([key,Icon,label]:any)=><button className={boot.page===key?'active':''} onClick={()=>{closeSidebar();go(key)}} key={key}><Icon size={19}/><span>{label}</span></button>)}</nav><Form><input name="action" value="logout" type="hidden"/><button className="logout"><LogOut size={18}/><span>Logout</span></button></Form></aside><div className="sidebar-backdrop" onClick={closeSidebar}/><main className="main"><header className="topbar"><button type="button" className="menu-toggle" onClick={toggleSidebar} title="Toggle menu"><MenuIcon/></button><div className="topbar-right"><FullscreenButton/><AccountMenu/></div></header>{boot.flash.error&&<div className="alert error">{boot.flash.error}</div>}{boot.flash.success&&<div className="alert success">{boot.flash.success}</div>}{children}</main></div>}
+// Mounted exactly once for the whole authenticated document (see
+// AuthenticatedApp below) — module navigation only ever swaps `children`,
+// so the sidebar/logo/topbar/fullscreen button/account menu are never
+// unmounted or re-fetched by switching modules, and the Fullscreen API
+// state (tied to the document, not to any React subtree) survives it.
+function Shell({children,navLoading,navError,onRetry}:any){const nav=navFor(boot.user);return <div className="app"><aside className="sidebar"><div className="brand"><img src="/icons/logo.png" alt="Niyati"/></div><nav>{nav.map(([key,Icon,label]:any)=><button className={boot.page===key?'active':''} onClick={()=>{closeSidebar();go(key)}} key={key}><Icon size={19}/><span>{label}</span></button>)}</nav><Form><input name="action" value="logout" type="hidden"/><button className="logout"><LogOut size={18}/><span>Logout</span></button></Form></aside><div className="sidebar-backdrop" onClick={closeSidebar}/><main className="main"><header className="topbar"><button type="button" className="menu-toggle" onClick={toggleSidebar} title="Toggle menu"><MenuIcon/></button><div className="topbar-right"><FullscreenButton/><AccountMenu/></div></header>{!navLoading&&boot.flash.error&&<div className="alert error">{boot.flash.error}</div>}{!navLoading&&boot.flash.success&&<div className="alert success">{boot.flash.success}</div>}{navLoading?<div className="main-loading-overlay"><span className="main-loading-spinner"></span><span>Loading...</span></div>:navError?<div className="main-error-state"><AlertTriangle size={28}/><p>{navError}</p><button type="button" className="secondary" onClick={onRetry}>Retry</button></div>:children}</main></div>}
 function AccountMenu(){
   const [open,setOpen]=useState(false); const [pwOpen,setPwOpen]=useState(false);
   const boxRef=useRef<HTMLDivElement>(null);
@@ -351,7 +455,7 @@ function RecentOrdersCard({rows}:any){
     <div className="section-head"><h2>Recent Orders</h2><button type="button" className="secondary view-full-btn" onClick={()=>go('orders')}>View All <ChevronRight size={15}/></button></div>
     <div className="table-scroll dash-orders-table-wrap"><table>
       <thead><tr><th>Order</th><th>Time</th><th>Table</th><th>Waiter</th><th>Amount</th><th>Status</th></tr></thead>
-      <tbody>{rows.length?rows.map((o:any)=><tr key={o.id} className="dash-order-row" onClick={()=>location.href='/order?id='+o.id}>
+      <tbody>{rows.length?rows.map((o:any)=><tr key={o.id} className="dash-order-row" onClick={()=>go('order?id='+o.id)}>
         <td><a href={'/order?id='+o.id}>{o.order}</a></td><td>{o.time}</td><td>{o.table}</td><td>{o.waiter}</td><td>{moneyINR(o.amount)}</td><td><DashStatusChip status={o.status}/></td>
       </tr>):<tr><td colSpan={6} className="muted">No orders yet today.</td></tr>}</tbody>
     </table></div>
@@ -432,7 +536,7 @@ function Dashboard(){
   const s=dash.summary||{};
   const disc=dash.discounts||{};
   const arrow=(n:number)=>n>=0?'↑':'↓';
-  return <Shell>
+  return <>
     <div className="section-head dash-head">
       <h2 className="page-heading">DASHBOARD</h2>
       <div className="dash-head-right">
@@ -464,7 +568,7 @@ function Dashboard(){
       <DiscountsCard data={dash.discounts}/>
       <AttentionCard alerts={dash.attention}/>
     </section>
-  </Shell>;
+  </>;
 }
 function PaymentSuccessToast(){
   // Reads the one-shot 'payment_success' session flash the server attaches
@@ -519,9 +623,9 @@ function useTablesPolling(initial:any[]){
   },[]);
   return tables;
 }
-function Tables(){const isParcel=boot.page==='parcels';const kind=isParcel?'Parcel':'Table';const Icon=isParcel?Package:Table2;const tables=useTablesPolling(boot.data.tables||[]);const [editing,setEditing]=useState<any>(null);const [showModal,setShowModal]=useState(false);const isAdmin=boot.user.role==='ADMIN';const startFormRefs=useRef<Record<number,HTMLFormElement|null>>({});const openAdd=()=>{setEditing(null);setShowModal(true)};const startEdit=(t:any,e:any)=>{e.stopPropagation();setEditing(t);setShowModal(true)};const occupiedCount=tables.filter((t:any)=>t.status!=='AVAILABLE').length;const availableCount=tables.length-occupiedCount;return <Shell><PaymentSuccessToast/><div className="section-head"><h2 className="page-heading">{kind.toUpperCase()}S</h2>{isAdmin&&<button type="button" className="primary tables-add-btn" onClick={openAdd}><Plus size={16}/> Add {kind}</button>}</div>{!isParcel&&<section className="table-widgets"><article className="table-widget widget-available"><div><small>Available {kind}s</small><strong>{availableCount}</strong></div><span className="widget-icon"><CheckCircle2/></span></article><article className="table-widget widget-occupied"><div><small>Occupied {kind}s</small><strong>{occupiedCount}</strong></div><span className="widget-icon"><Users/></span></article></section>}<div className="table-grid">{tables.map((t:any)=><article className={'table-card '+t.status.toLowerCase()} key={t.id} onClick={(e:any)=>{if((e.target as HTMLElement).closest('button,a,input'))return;if(t.order_id)location.href='/order?id='+t.order_id;else startFormRefs.current[t.id]?.requestSubmit()}}><div className="table-card-body"><div className="table-card-top"><span className="table-card-icon"><Icon size={17}/></span>{!isParcel&&<small>{t.status}</small>}{isAdmin&&<div className="table-card-actions"><button type="button" className="menu-card-icon-btn" title={`Edit ${kind.toLowerCase()}`} onClick={(e:any)=>startEdit(t,e)}><Pencil size={14}/></button></div>}</div><h2>{t.table_name}</h2>{t.order_id&&<b>{money(t.grand_total)}</b>}</div>{!t.order_id&&<form ref={(el:any)=>{startFormRefs.current[t.id]=el}} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="order_create"/><input type="hidden" name="table_id" value={t.id}/></form>}</article>)}</div>{showModal&&<TableModal kind={kind} editing={editing} onClose={()=>setShowModal(false)}/>}</Shell>}
+function Tables(){const isParcel=boot.page==='parcels';const kind=isParcel?'Parcel':'Table';const Icon=isParcel?Package:Table2;const tables=useTablesPolling(boot.data.tables||[]);const [editing,setEditing]=useState<any>(null);const [showModal,setShowModal]=useState(false);const isAdmin=boot.user.role==='ADMIN';const startFormRefs=useRef<Record<number,HTMLFormElement|null>>({});const openAdd=()=>{setEditing(null);setShowModal(true)};const startEdit=(t:any,e:any)=>{e.stopPropagation();setEditing(t);setShowModal(true)};const occupiedCount=tables.filter((t:any)=>t.status!=='AVAILABLE').length;const availableCount=tables.length-occupiedCount;return <><PaymentSuccessToast/><div className="section-head"><h2 className="page-heading">{kind.toUpperCase()}S</h2>{isAdmin&&<button type="button" className="primary tables-add-btn" onClick={openAdd}><Plus size={16}/> Add {kind}</button>}</div>{!isParcel&&<section className="table-widgets"><article className="table-widget widget-available"><div><small>Available {kind}s</small><strong>{availableCount}</strong></div><span className="widget-icon"><CheckCircle2/></span></article><article className="table-widget widget-occupied"><div><small>Occupied {kind}s</small><strong>{occupiedCount}</strong></div><span className="widget-icon"><Users/></span></article></section>}<div className="table-grid">{tables.map((t:any)=><article className={'table-card '+t.status.toLowerCase()} key={t.id} onClick={(e:any)=>{if((e.target as HTMLElement).closest('button,a,input'))return;if(t.order_id)go('order?id='+t.order_id);else startFormRefs.current[t.id]?.requestSubmit()}}><div className="table-card-body"><div className="table-card-top"><span className="table-card-icon"><Icon size={17}/></span>{!isParcel&&<small>{t.status}</small>}{isAdmin&&<div className="table-card-actions"><button type="button" className="menu-card-icon-btn" title={`Edit ${kind.toLowerCase()}`} onClick={(e:any)=>startEdit(t,e)}><Pencil size={14}/></button></div>}</div><h2>{t.table_name}</h2>{t.order_id&&<b>{money(t.grand_total)}</b>}</div>{!t.order_id&&<form ref={(el:any)=>{startFormRefs.current[t.id]=el}} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="order_create"/><input type="hidden" name="table_id" value={t.id}/></form>}</article>)}</div>{showModal&&<TableModal kind={kind} editing={editing} onClose={()=>setShowModal(false)}/>}</>}
 function TableModal({kind,editing,onClose}:any){useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);const deleteFormRef=useRef<HTMLFormElement>(null);const onDelete=(e:any)=>{if(confirm(`Delete "${editing.table_name}"? This cannot be undone.`)){startButtonLoading(e.currentTarget,'Deleting');deleteFormRef.current?.requestSubmit()}};return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}><div className="modal-panel"><div className="modal-head"><h2>{editing?`Edit ${kind.toLowerCase()}`:`Add ${kind.toLowerCase()}`}</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div>{editing&&<form ref={deleteFormRef} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="table_delete"/><input type="hidden" name="id" value={editing.id}/></form>}<Form key={editing?.id||'new'}><input type="hidden" name="action" value="table_save"/><input type="hidden" name="id" value={editing?.id||0}/><input type="hidden" name="kind" value={kind.toUpperCase()}/><div className="form-grid"><label>{kind} name<input name="table_name" required autoFocus defaultValue={editing?.table_name||''}/></label><label>Display order<input name="sort_order" type="number" defaultValue={editing?.sort_order??0}/></label><label className="check"><input type="checkbox" name="active" defaultChecked={editing?Number(editing.active)===1:true}/>Active</label></div><div className="form-actions"><button className="primary">{editing?`Update ${kind.toLowerCase()}`:`Save ${kind.toLowerCase()}`}</button><button type="button" className="secondary" onClick={onClose}>Cancel</button>{editing&&<button type="button" className="danger" onClick={onDelete}><Trash2 size={14}/> Delete {kind.toLowerCase()}</button>}</div></Form></div></div>}
-function Order(){const d=boot.data;if(d.missing)return <Shell><div className="surface">Order not found.</div></Shell>;return <Shell><OrderEditor order={d.order} menu={d.menu||[]} variants={d.variants||[]} initial={d.items||[]} settings={d.settings||{}}/></Shell>}
+function Order(){const d=boot.data;if(d.missing)return <div className="surface">Order not found.</div>;return <OrderEditor order={d.order} menu={d.menu||[]} variants={d.variants||[]} initial={d.items||[]} settings={d.settings||{}}/>}
 function OrderEditor({order,menu,variants,initial,settings}:any){
   const [items,setItems]=useState(initial.map((x:any)=>({...x,menu_item_id:Number(x.menu_item_id),variant_id:x.menu_item_variant_id?Number(x.menu_item_variant_id):null,complementary:Number(x.complementary_amount)>0,discount_type:x.item_discount_type||'NONE',discount_value:x.item_discount_value||''})));
   useEffect(()=>{if(new URLSearchParams(location.search).get('print')==='1'){const t=setTimeout(printThermalBill,300);return()=>clearTimeout(t)}},[]);
@@ -616,7 +720,7 @@ function OrderEditor({order,menu,variants,initial,settings}:any){
           </div><div className="bill-totals"><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{comp>0&&<div><span>Complementary</span><b>-{money(comp)}</b></div>}{totalDiscount>0&&<div><span>Discount</span><b>-{money(totalDiscount)}</b></div>}<div className="grand"><span>Grand Total</span><b>{money(total)}</b></div></div>{settingOn('show_thank_you_message')&&<p className="bill-footer">{settings.thank_you_message||'Thank you. Visit again.'}</p>}</div></div>
 }
 function DataTable({title,headers,rows,mobileRows,className}:any){return <section className={'surface data-table'+(className?' '+className:'')}><h2>{title}</h2><div className={'table-scroll'+(mobileRows?' data-table-scroll-wrap':'')}><table><thead><tr>{headers.map((h:string)=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows?.length?rows.map((r:any[],i:number)=><tr key={i}>{r.map((c:any,j:number)=><td key={j}>{c}</td>)}</tr>):<tr><td colSpan={headers.length} className="muted">No records found.</td></tr>}</tbody></table></div>{mobileRows&&<div className="data-table-cards">{mobileRows.length?mobileRows:<p className="muted">No records found.</p>}</div>}</section>}
-function ListPage(){const rows=boot.data.orders||[];const title=boot.page==='modified'?'Modified bills':'Bills';return <Shell><DataTable title={title} headers={['Reference','Table','Status','Total','Updated']} rows={rows.map((o:any)=>[<a href={'/order?id='+o.id}>{o.bill_number||o.order_number}</a>,o.table_name||'—',o.status+(o.modifications?` (${o.modifications} changes)`:''),money(o.grand_total),new Date(o.updated_at||o.completed_at||o.cancelled_at).toLocaleString()])}/></Shell>}
+function ListPage(){const rows=boot.data.orders||[];const title=boot.page==='modified'?'Modified bills':'Bills';return <DataTable title={title} headers={['Reference','Table','Status','Total','Updated']} rows={rows.map((o:any)=>[<a href={'/order?id='+o.id}>{o.bill_number||o.order_number}</a>,o.table_name||'—',o.status+(o.modifications?` (${o.modifications} changes)`:''),money(o.grand_total),new Date(o.updated_at||o.completed_at||o.cancelled_at).toLocaleString()])}/>}
 const ORDER_STATUS_LABEL:Record<string,string>={DRAFT:'New',OPEN:'Preparing',SERVED:'Served',PAID:'Completed',CANCELLED:'Cancelled'};
 function StatusChip({status}:any){return <span className={'status-chip status-'+String(status).toLowerCase()}>{ORDER_STATUS_LABEL[status]||status}</span>}
 function TableSelect({options,value,onChange,placeholder}:any){
@@ -788,7 +892,7 @@ function OrdersPage(){
   const completed=filtered.filter((o:any)=>o.status==='PAID').length;
   const pending=filtered.filter((o:any)=>o.status!=='PAID'&&o.status!=='CANCELLED').length;
   const clearFilters=()=>{setSearch('');setDateFilter('today');setCustomDate('');setStatusFilter('ALL');setTableFilter('ALL');setWaiterFilter('ALL');};
-  return <Shell>
+  return <>
     <div className="section-head"><h2 className="page-heading">ORDERS</h2><button type="button" className="primary" onClick={()=>setModal({mode:'add'})}><Plus size={16}/> Add Order</button></div>
     <section className="metric-grid metric-grid-3 orders-metrics">
       <Metric label="Total orders" value={total} icon={ClipboardList}/>
@@ -818,7 +922,7 @@ function OrdersPage(){
         <div className="order-list-card-row"><span>Total</span><div className="order-list-card-total-actions"><b>{money(o.grand_total)}</b><button type="button" className="icon" title="Edit order" onClick={()=>setModal({mode:'edit',order:o})}><Pencil size={14}/></button></div></div>
       </div>)}/>
     {modal&&<OrderModal mode={modal.mode} order={modal.order} tables={canteenTables} onClose={()=>setModal(null)}/>}
-  </Shell>;
+  </>;
 }
 function PaymentChip({method}:any){const m=String(method||'—').toUpperCase();const cls=m==='CASH'?'cash':m==='UPI'?'upi':'other';return <span className={'payment-chip payment-'+cls}>{m}</span>}
 function BillsPage(){
@@ -844,7 +948,7 @@ function BillsPage(){
   const upi=filtered.filter((o:any)=>String(o.method||'').toUpperCase()==='UPI').reduce((a:number,o:any)=>a+Number(o.grand_total||0),0);
   const salesLabel=dateFilter==='today'?"Today's sales":dateFilter==='yesterday'?"Yesterday's sales":dateFilter==='month'?"This Month's sales":dateFilter==='all'?'Total sales':dateFilter==='7days'?'Last 7 Days sales':'Sales';
   const clearFilters=()=>{setSearch('');setDateFilter('today');setCustomDate('');setPaymentFilter('ALL');};
-  return <Shell>
+  return <>
     <h2 className="page-heading">BILLS</h2>
     <section className="metric-grid metric-grid-4 bills-metrics">
       <Metric label="Total bills" value={totalBills} icon={ReceiptText}/>
@@ -873,15 +977,15 @@ function BillsPage(){
         <div className="order-list-card-row"><span>Time</span><b>{billDate(o).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</b></div>
         <div className="order-list-card-row"><span>Payment</span><PaymentChip method={o.method}/></div>
       </div>)}/>
-  </Shell>;
+  </>;
 }
 const CANCEL_PALETTE=['#fd397a','#38a4f8','#485bbd','#01b393','#f5325c','#ffb822','#6690f4'];
 const paletteColor=(s:string)=>{let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return CANCEL_PALETTE[h%CANCEL_PALETTE.length]};
 function ByChip({name}:any){if(!name)return <span className="muted">—</span>;const c=paletteColor(name);return <span className="by-chip"><span className="by-avatar" style={{background:c}}>{name.trim().slice(0,1).toUpperCase()}</span><span className="by-name">{name}</span></span>}
 function CancelledActions({id}:any){
   return <div className="row-actions">
-    <button type="button" className="row-action" style={{background:'rgba(56,164,248,.14)',color:'#1672b9'}} onClick={()=>location.href='/order?id='+id+'&print=1'}><Eye size={13}/> View Bill</button>
-    <button type="button" className="row-action" style={{background:'rgba(72,91,189,.14)',color:'#485bbd'}} onClick={()=>location.href='/order?id='+id}><ClipboardList size={13}/> View Order</button>
+    <button type="button" className="row-action" style={{background:'rgba(56,164,248,.14)',color:'#1672b9'}} onClick={()=>go('order?id='+id+'&print=1')}><Eye size={13}/> View Bill</button>
+    <button type="button" className="row-action" style={{background:'rgba(72,91,189,.14)',color:'#485bbd'}} onClick={()=>go('order?id='+id)}><ClipboardList size={13}/> View Order</button>
   </div>;
 }
 function CancelledBillsPage(){
@@ -901,7 +1005,7 @@ function CancelledBillsPage(){
     return true;
   });
   const clearFilters=()=>{setSearch('');setDateFilter('today');setCustomDate('');setCancelledByFilter('ALL');};
-  return <Shell>
+  return <>
     <h2 className="page-heading">CANCELLED BILLS</h2>
     <section className="orders-toolbar">
       <div className="orders-search"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by bill no., order no., table"/></div>
@@ -936,7 +1040,7 @@ function CancelledBillsPage(){
         <div className="user-card-field"><small>Total</small><b>{money(o.grand_total)}</b></div>
         <div className="user-card-field"><CancelledActions id={o.id}/></div>
       </div>)}/>
-  </Shell>;
+  </>;
 }
 const CHANGE_META:Record<string,[any,string,string]>={
   QUANTITY_CHANGED:[Pencil,'var(--c-skyblue)','Quantity changed'],
@@ -991,10 +1095,10 @@ function ModifiedActions({id,onViewChanges}:any){
   return <div className="kebab" ref={boxRef}>
     <button type="button" className="kebab-btn" onClick={()=>setOpen(o=>!o)} title="Bill actions"><MoreVertical size={17}/></button>
     {open&&<div className="kebab-menu">
-      <button type="button" onClick={()=>{setOpen(false);location.href='/order?id='+id+'&print=1'}}><Eye size={14}/> View Bill</button>
+      <button type="button" onClick={()=>{setOpen(false);go('order?id='+id+'&print=1')}}><Eye size={14}/> View Bill</button>
       <button type="button" onClick={()=>{setOpen(false);onViewChanges()}}><History size={14}/> View Changes</button>
-      <button type="button" onClick={()=>{setOpen(false);location.href='/order?id='+id}}><ClipboardList size={14}/> View Order</button>
-      <button type="button" onClick={()=>{setOpen(false);location.href='/order?id='+id+'&print=1'}}><Printer size={14}/> Print Bill</button>
+      <button type="button" onClick={()=>{setOpen(false);go('order?id='+id)}}><ClipboardList size={14}/> View Order</button>
+      <button type="button" onClick={()=>{setOpen(false);go('order?id='+id+'&print=1')}}><Printer size={14}/> Print Bill</button>
     </div>}
   </div>;
 }
@@ -1017,7 +1121,7 @@ function ModifiedBillsPage(){
     return true;
   });
   const clearFilters=()=>{setSearch('');setDateFilter('month');setCustomDate('');setModifiedByFilter('ALL');};
-  return <Shell>
+  return <>
     <h2 className="page-heading">MODIFIED BILLS</h2>
     <section className="orders-toolbar">
       <div className="orders-search"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by bill no., order no., table..."/></div>
@@ -1062,7 +1166,7 @@ function ModifiedBillsPage(){
         </div>;
       })}/>
     {viewing&&<ChangesModal order={viewing} changes={allChanges.filter((c:any)=>String(c.order_id)===String(viewing.id))} onClose={()=>setViewing(null)}/>}
-  </Shell>;
+  </>;
 }
 function MenuModal({editing,categories,onClose}:any){
   useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);
@@ -1112,7 +1216,7 @@ function MenuModal({editing,categories,onClose}:any){
     </div>
   </div>;
 }
-function Menu(){const d=boot.data;const items=d.menu||[];const [editing,setEditing]=useState<any>(null);const [showModal,setShowModal]=useState(false);const initialCategory=useMemo(()=>{const id=new URLSearchParams(location.search).get('category');const found=id&&(d.categories||[]).find((c:any)=>String(c.id)===id);return found?found.name:'All'},[]);const [category,setCategory]=useState(initialCategory);const cats=['All',...Array.from(new Set(items.map((m:any)=>m.category_name)))];const filtered=category==='All'?items:items.filter((m:any)=>m.category_name===category);const openAdd=()=>{setEditing(null);setShowModal(true)};const startEdit=(m:any)=>{setEditing(m);setShowModal(true)};const closeModal=()=>setShowModal(false);return <Shell><section className="menu-catalog-wrap"><div className="section-head"><h2>Menu items</h2><div className="menu-head-right"><span className="muted">{filtered.length} items</span><button type="button" className="primary menu-add-btn" onClick={openAdd}><Plus size={16}/> Add menu item</button></div></div><div className="chips menu-page-chips">{cats.map((c:any)=><button type="button" className={c===category?'selected':''} onClick={()=>setCategory(c)} key={c}>{c}</button>)}</div><div className="menu-catalog">{filtered.length?filtered.map((m:any,i:number)=><article className="menu-card" key={m.id}><div className="menu-card-media"><img loading={i<8?'eager':'lazy'} decoding="async" src={menuImageSrc(m)} alt=""/><div className="menu-card-actions"><button type="button" className="menu-card-icon-btn" title="Edit item" onClick={()=>startEdit(m)}><Pencil size={15}/></button></div></div><div className="menu-card-body"><span className="menu-card-tag">{m.category_name}</span><h3>{m.name}</h3><b>{m.price===null?'Price not set':money(m.price)}</b></div></article>):<p className="muted empty-state">{category==='All'?'No menu items yet — add one above.':`No menu items in "${category}" yet.`}</p>}</div></section>{showModal&&<MenuModal editing={editing} categories={d.categories||[]} onClose={closeModal}/>}</Shell>}
+function Menu(){const d=boot.data;const items=d.menu||[];const [editing,setEditing]=useState<any>(null);const [showModal,setShowModal]=useState(false);const initialCategory=useMemo(()=>{const id=new URLSearchParams(location.search).get('category');const found=id&&(d.categories||[]).find((c:any)=>String(c.id)===id);return found?found.name:'All'},[]);const [category,setCategory]=useState(initialCategory);const cats=['All',...Array.from(new Set(items.map((m:any)=>m.category_name)))];const filtered=category==='All'?items:items.filter((m:any)=>m.category_name===category);const openAdd=()=>{setEditing(null);setShowModal(true)};const startEdit=(m:any)=>{setEditing(m);setShowModal(true)};const closeModal=()=>setShowModal(false);return <><section className="menu-catalog-wrap"><div className="section-head"><h2>Menu items</h2><div className="menu-head-right"><span className="muted">{filtered.length} items</span><button type="button" className="primary menu-add-btn" onClick={openAdd}><Plus size={16}/> Add menu item</button></div></div><div className="chips menu-page-chips">{cats.map((c:any)=><button type="button" className={c===category?'selected':''} onClick={()=>setCategory(c)} key={c}>{c}</button>)}</div><div className="menu-catalog">{filtered.length?filtered.map((m:any,i:number)=><article className="menu-card" key={m.id}><div className="menu-card-media"><img loading={i<8?'eager':'lazy'} decoding="async" src={menuImageSrc(m)} alt=""/><div className="menu-card-actions"><button type="button" className="menu-card-icon-btn" title="Edit item" onClick={()=>startEdit(m)}><Pencil size={15}/></button></div></div><div className="menu-card-body"><span className="menu-card-tag">{m.category_name}</span><h3>{m.name}</h3><b>{m.price===null?'Price not set':money(m.price)}</b></div></article>):<p className="muted empty-state">{category==='All'?'No menu items yet — add one above.':`No menu items in "${category}" yet.`}</p>}</div></section>{showModal&&<MenuModal editing={editing} categories={d.categories||[]} onClose={closeModal}/>}</>}
 function CategoryMenu({onEdit,onView,onDelete}:any){
   const [open,setOpen]=useState(false);
   const boxRef=useRef<HTMLDivElement>(null);
@@ -1137,7 +1241,7 @@ function CategoryCard({c,onEdit}:any){
   const [bg,fg]=categoryColor(c.id);
   const formRef=useRef<HTMLFormElement>(null);
   const count=Number(c.item_count||0);
-  const viewItems=()=>location.href='/menu?category='+c.id;
+  const viewItems=()=>go('menu?category='+c.id);
   const onDelete=(e:any)=>{if(confirm(`Delete "${c.name}"? It will be hidden but existing menu history stays intact.`)){startButtonLoading(e.currentTarget,'Deleting');formRef.current?.requestSubmit()}};
   return <article className={'category-card'+(c.active?'':' inactive')}>
     <form ref={formRef} method="post" className="category-delete-form"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="category_delete"/><input type="hidden" name="id" value={c.id}/></form>
@@ -1178,14 +1282,14 @@ function Categories(){
   const [search,setSearch]=useState('');
   const [modal,setModal]=useState<any>(null);
   const filtered=list.filter((c:any)=>c.name.toLowerCase().includes(search.trim().toLowerCase()));
-  return <Shell>
+  return <>
     <div className="section-head"><h2 className="page-heading">CATEGORIES</h2><button type="button" className="primary" onClick={()=>setModal({mode:'add'})}><Plus size={16}/> Add Category</button></div>
     <div className="search category-search"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search categories"/></div>
     <div className="category-grid">
       {filtered.length?filtered.map((c:any)=><CategoryCard c={c} key={c.id} onEdit={()=>setModal({mode:'edit',category:c})}/>):<p className="muted empty-state">No categories match your search.</p>}
     </div>
     {modal&&<CategoryModal editing={modal.category} onClose={()=>setModal(null)}/>}
-  </Shell>;
+  </>;
 }
 function RoleChip({role}:any){const r=String(role||'').toLowerCase();return <span className={'role-chip role-'+r}>{role}</span>}
 function UserMenu({active,onView,onEdit,onReset,onToggle}:any){
@@ -1294,7 +1398,7 @@ function UsersPage(){
     return true;
   });
   const clearFilters=()=>{setSearch('');setSearchBy('name');setRoleFilter('ALL')};
-  return <Shell>
+  return <>
     <div className="section-head"><h2 className="page-heading">USERS</h2><button type="button" className="primary" onClick={()=>setModal({mode:'add'})}><Plus size={16}/> Add User</button></div>
     <section className="orders-toolbar">
       <div className="orders-search"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search by ${searchBy==='mobile'?'mobile number':searchBy}`}/></div>
@@ -1321,7 +1425,7 @@ function UsersPage(){
     {modal&&(modal.mode==='add'||modal.mode==='edit')&&<UserModal editing={modal.user} roles={d.roles} onClose={()=>setModal(null)}/>}
     {modal&&modal.mode==='view'&&<UserProfileModal user={modal.user} onClose={()=>setModal(null)}/>}
     {modal&&modal.mode==='reset'&&<ResetPasswordModal user={modal.user} onClose={()=>setModal(null)}/>}
-  </Shell>;
+  </>;
 }
 const STATUS_COLORS:Record<string,string>={DRAFT:'#38a4f8',OPEN:'#ffb822',SERVED:'#6690f4',PAID:'#01b393',CANCELLED:'#f5325c'};
 const PAYMENT_COLORS:Record<string,string>={CASH:'#01b393',UPI:'#485bbd',OTHER:'#ffb822'};
@@ -1468,7 +1572,7 @@ function CancelledSummaryCard({cancelledOrders,cancelledAmount,totalOrders}:any)
         <div><small>Share Of Orders</small><b className="stat-indigo">{pct}%</b></div>
       </div>
     </div>
-    <button type="button" className="secondary cancelled-card-btn" onClick={()=>location.href='/cancelled'}>View Cancelled Bills <ChevronRight size={15}/></button>
+    <button type="button" className="secondary cancelled-card-btn" onClick={()=>go('cancelled')}>View Cancelled Bills <ChevronRight size={15}/></button>
   </section>;
 }
 const REPORT_PERIODS=[['today','Today'],['yesterday','Yesterday'],['7days','Last 7 Days'],['month','This Month'],['lastmonth','Last Month'],['custom','Custom Date']];
@@ -1597,7 +1701,7 @@ function ModifiedSummaryCard({summary}:any){
         <div className="user-card-field"><small>Modified By</small><b>{r.modifiedBy||'—'}</b></div>
       </div>})}</div>
     </>:<p className="muted empty-state">No modified bills for this period.</p>}
-    <button type="button" className="secondary view-full-btn" onClick={()=>location.href='/modified'}>View Modified Bills <ChevronRight size={15}/></button>
+    <button type="button" className="secondary view-full-btn" onClick={()=>go('modified')}>View Modified Bills <ChevronRight size={15}/></button>
   </section>;
 }
 function ClosingSummaryCard({ov,payments}:any){
@@ -1627,7 +1731,7 @@ function ClosingSummaryCard({ov,payments}:any){
 function Reports(){
   const d=boot.data,ov=d.overview||{},period=d.period||'today';
   const [section,setSection]=useState<string>(()=>new URLSearchParams(location.search).get('section')||'all');
-  const goPeriod=(p:string)=>location.href='/reports?period='+p+(section!=='all'?'&section='+section:'');
+  const goPeriod=(p:string)=>go('reports?period='+p+(section!=='all'?'&section='+section:''));
   const changeSection=(s:string)=>{setSection(s);const url=new URL(location.href);url.searchParams.set('section',s);history.replaceState(null,'',url.toString())};
   const scrollTo=(id:string)=>document.getElementById(id)?.scrollIntoView({behavior:'smooth'});
   const show=(id:string)=>section==='all'||section===id;
@@ -1637,7 +1741,7 @@ function Reports(){
   const totalPaymentAmount=(d.payments||[]).reduce((a:number,p:any)=>a+Number(p.amount||0),0);
   const totalOrderTypeOrders=(d.orderTypeBreakdown||[]).reduce((a:number,x:any)=>a+Number(x.orders||0),0);
   const totalOrderTypeSales=(d.orderTypeBreakdown||[]).reduce((a:number,x:any)=>a+Number(x.sales||0),0);
-  return <Shell>
+  return <>
     <div className="reports-page">
     <div className="reports-print-head">
       <h1>{d.settings?.canteen_name||d.settings?.business_name||'Canteen'}</h1>
@@ -1801,15 +1905,15 @@ function Reports(){
     <ClosingSummaryCard ov={ov} payments={d.payments||[]}/>
     </>}
     </div>
-  </Shell>;
+  </>;
 }
-function SimpleRecords(){const d=boot.data;const list=d.audits||[];const rows=list.map((x:any)=>[x.action,x.bill_number||x.order_number,x.display_name,new Date(x.created_at).toLocaleString()]);return <Shell><DataTable title="Audit history" headers={['Action','Order','User','At']} rows={rows}
+function SimpleRecords(){const d=boot.data;const list=d.audits||[];const rows=list.map((x:any)=>[x.action,x.bill_number||x.order_number,x.display_name,new Date(x.created_at).toLocaleString()]);return <DataTable title="Audit history" headers={['Action','Order','User','At']} rows={rows}
     mobileRows={list.map((x:any,i:number)=><div className="user-card" key={x.id||i}>
       <div className="user-card-top"><span className="user-card-name">{x.action}</span></div>
       <div className="user-card-field"><small>Order</small><b>{x.bill_number||x.order_number||'—'}</b></div>
       <div className="user-card-field"><small>User</small><b>{x.display_name}</b></div>
       <div className="user-card-field"><small>Date &amp; Time</small><b>{new Date(x.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</b></div>
-    </div>)}/></Shell>}
+    </div>)}/>}
 const SETTINGS_TABS=[['profile','My Profile'],['business','Business Information'],['order','Order Settings'],['billing','Billing & Payment'],['discount','Discount & Complimentary'],['access','User Access Settings'],['system','System Preferences']];
 function SettingsTabs({tab,onChange,isAdmin}:any){
   const tabs=isAdmin?SETTINGS_TABS:SETTINGS_TABS.filter(([k]:any)=>k!=='access');
@@ -2125,7 +2229,7 @@ function SettingsPage(){
   const [tab,setTab]=useState<string>(()=>new URLSearchParams(location.search).get('tab')||'business');
   const activeTab=tab==='access'&&!isAdmin?'business':tab;
   const changeTab=(t:string)=>{setTab(t);const url=new URL(location.href);url.searchParams.set('tab',t);history.replaceState(null,'',url.toString())};
-  return <Shell>
+  return <>
     <h2 className="page-heading">SETTINGS</h2>
     <SettingsTabs tab={activeTab} onChange={changeTab} isAdmin={isAdmin}/>
     {activeTab==='profile'&&<ProfileSettingsTab u={boot.user}/>}
@@ -2135,16 +2239,33 @@ function SettingsPage(){
     {activeTab==='discount'&&<DiscountComplimentarySettingsTab s={s}/>}
     {activeTab==='access'&&<UserAccessTab permissionUsers={d.permissionUsers||[]} permissionCatalog={d.permissionCatalog||[]}/>}
     {activeTab==='system'&&<SystemSettingsTab s={s}/>}
-  </Shell>;
+  </>;
 }
-// InstallBanner is mounted once here at the top-level render call — not
-// nested inside Shell — so it covers both the authenticated app (any page,
-// since every page goes through this same bootstrap) and the login page
-// (which has no window.__CANTEEN__/boot and therefore no <App/> at all,
-// just this one banner) without a second, duplicate implementation.
+const MODULE_BY_PAGE:Record<string,any>={dashboard:Dashboard,tables:Tables,parcels:Tables,order:Order,orders:OrdersPage,menu:Menu,categories:Categories,users:UsersPage,reports:Reports,audits:SimpleRecords,settings:SettingsPage,bills:BillsPage,cancelled:CancelledBillsPage,modified:ModifiedBillsPage};
+// The one persistent root for the whole authenticated document: Shell (and
+// everything in it — sidebar, logo, topbar, fullscreen button, account
+// menu) is mounted exactly once here and never again for the life of the
+// page. Module navigation only ever swaps which component renders as
+// Shell's children (see clientNavigate/MODULE_BY_PAGE above), so it's a
+// plain React re-render, never a remount of the shell itself and never a
+// real document navigation — which is what lets Fullscreen API state
+// (tied to the document) survive switching modules.
+function AuthenticatedApp(){
+  const [,setTick]=useState(0);
+  const [navLoading,setNavLoading]=useState(false);
+  const [navError,setNavError]=useState<string|null>(null);
+  useEffect(()=>{
+    notifyNav=(loading:boolean,error:string|null)=>{setNavLoading(loading);setNavError(error)};
+    notifyBootChanged=()=>setTick(t=>t+1);
+    const onPopState=()=>clientNavigate(location.pathname+location.search,undefined,false);
+    window.addEventListener('popstate',onPopState);
+    return()=>{notifyNav=null;notifyBootChanged=null;window.removeEventListener('popstate',onPopState)};
+  },[]);
+  const Module=MODULE_BY_PAGE[boot.page]||ListPage;
+  return <Shell navLoading={navLoading} navError={navError} onRetry={()=>clientNavigate(lastNavUrl,undefined,false)}><Module/></Shell>;
+}
 if(boot){
-  const page=boot.page;const App=page==='dashboard'?Dashboard:page==='tables'||page==='parcels'?Tables:page==='order'?Order:page==='orders'?OrdersPage:page==='menu'?Menu:page==='categories'?Categories:page==='users'?UsersPage:page==='reports'?Reports:page==='audits'?SimpleRecords:page==='settings'?SettingsPage:page==='bills'?BillsPage:page==='cancelled'?CancelledBillsPage:page==='modified'?ModifiedBillsPage:ListPage;
-  createRoot(document.getElementById('root')!).render(<><App/><InstallBanner/></>);
+  createRoot(document.getElementById('root')!).render(<><AuthenticatedApp/><InstallBanner/></>);
 }else{
   const pwaRoot=document.getElementById('pwa-install-root');
   if(pwaRoot)createRoot(pwaRoot).render(<InstallBanner/>);
