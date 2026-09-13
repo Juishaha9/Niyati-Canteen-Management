@@ -392,7 +392,60 @@ function Dashboard(){
     </section>
   </Shell>;
 }
-function Tables(){const isParcel=boot.page==='parcels';const kind=isParcel?'Parcel':'Table';const Icon=isParcel?Package:Table2;const tables=boot.data.tables||[];const [editing,setEditing]=useState<any>(null);const [showModal,setShowModal]=useState(false);const isAdmin=boot.user.role==='ADMIN';const startFormRefs=useRef<Record<number,HTMLFormElement|null>>({});const openAdd=()=>{setEditing(null);setShowModal(true)};const startEdit=(t:any,e:any)=>{e.stopPropagation();setEditing(t);setShowModal(true)};const occupiedCount=tables.filter((t:any)=>t.status!=='AVAILABLE').length;const availableCount=tables.length-occupiedCount;return <Shell><div className="section-head"><h2 className="page-heading">{kind.toUpperCase()}S</h2>{isAdmin&&<button type="button" className="primary tables-add-btn" onClick={openAdd}><Plus size={16}/> Add {kind}</button>}</div>{!isParcel&&<section className="table-widgets"><article className="table-widget widget-available"><div><small>Available {kind}s</small><strong>{availableCount}</strong></div><span className="widget-icon"><CheckCircle2/></span></article><article className="table-widget widget-occupied"><div><small>Occupied {kind}s</small><strong>{occupiedCount}</strong></div><span className="widget-icon"><Users/></span></article></section>}<div className="table-grid">{tables.map((t:any)=><article className={'table-card '+t.status.toLowerCase()} key={t.id} onClick={(e:any)=>{if((e.target as HTMLElement).closest('button,a,input'))return;if(t.order_id)location.href='/order?id='+t.order_id;else startFormRefs.current[t.id]?.requestSubmit()}}><div className="table-card-body"><div className="table-card-top"><span className="table-card-icon"><Icon size={17}/></span>{!isParcel&&<small>{t.status}</small>}{isAdmin&&<div className="table-card-actions"><button type="button" className="menu-card-icon-btn" title={`Edit ${kind.toLowerCase()}`} onClick={(e:any)=>startEdit(t,e)}><Pencil size={14}/></button></div>}</div><h2>{t.table_name}</h2>{t.order_id&&<b>{money(t.grand_total)}</b>}</div>{!t.order_id&&<form ref={(el:any)=>{startFormRefs.current[t.id]=el}} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="order_create"/><input type="hidden" name="table_id" value={t.id}/></form>}</article>)}</div>{showModal&&<TableModal kind={kind} editing={editing} onClose={()=>setShowModal(false)}/>}</Shell>}
+function PaymentSuccessToast(){
+  // Reads the one-shot 'payment_success' session flash the server attaches
+  // to the post-payment redirect (see order_pay in routes/web.php) — the
+  // same response pay() already returned, never a second request. The flash
+  // is consumed server-side on this single page load, so a refresh won't
+  // re-show it.
+  const [info,setInfo]=useState<any>(()=>{const raw=boot.flash.payment_success;if(!raw)return null;try{return JSON.parse(raw)}catch{return null}});
+  useEffect(()=>{if(!info)return;const t=setTimeout(()=>setInfo(null),3500);return()=>clearTimeout(t)},[]);
+  if(!info)return null;
+  return <div className="payment-success-toast" role="status">
+    <CheckCircle2 size={22}/>
+    <div><b>Payment Successful</b><span>{info.bill_number} · {money(info.amount)} · {info.method}</span></div>
+  </div>;
+}
+// Keeps the Tables/Parcels grid in sync across devices without WebSockets:
+// a plain 5s poll against the same page's own JSON variant (?poll=1, same
+// query PageDataService already runs for the initial SSR), refreshed
+// immediately on tab-visibility/focus regain since a backgrounded tab's
+// last poll can be stale by the time the operator looks back at it. Skips
+// setState entirely when the response is byte-identical to what's already
+// shown, so an unchanged table never re-renders or flickers; when a table
+// *did* change, only its own keyed card updates because table id doubles
+// as the React key. The interval/listeners are torn down on unmount, which
+// happens for free here since every navigation in this app is a full page
+// load (no SPA router), so leaving /tables always kills the polling.
+function useTablesPolling(initial:any[]){
+  const [tables,setTables]=useState(initial);
+  const lastJson=useRef(JSON.stringify(initial));
+  useEffect(()=>{
+    let cancelled=false;
+    const fetchLatest=async()=>{
+      try{
+        const res=await fetch(location.pathname+'?poll=1',{headers:{Accept:'application/json'},cache:'no-store'});
+        if(!res.ok||cancelled)return;
+        const data=await res.json();
+        const next=data.tables||[];
+        const json=JSON.stringify(next);
+        if(json===lastJson.current)return;
+        lastJson.current=json;
+        if(!cancelled)setTables(next);
+      }catch{/* transient network hiccup - next tick or focus/visibility retries */}
+    };
+    fetchLatest();
+    const timer=setInterval(fetchLatest,5000);
+    const onVisible=()=>{if(document.visibilityState==='visible')fetchLatest()};
+    const onFocus=()=>fetchLatest();
+    document.addEventListener('visibilitychange',onVisible);
+    window.addEventListener('focus',onFocus);
+    window.addEventListener('pageshow',onFocus);
+    return()=>{cancelled=true;clearInterval(timer);document.removeEventListener('visibilitychange',onVisible);window.removeEventListener('focus',onFocus);window.removeEventListener('pageshow',onFocus)};
+  },[]);
+  return tables;
+}
+function Tables(){const isParcel=boot.page==='parcels';const kind=isParcel?'Parcel':'Table';const Icon=isParcel?Package:Table2;const tables=useTablesPolling(boot.data.tables||[]);const [editing,setEditing]=useState<any>(null);const [showModal,setShowModal]=useState(false);const isAdmin=boot.user.role==='ADMIN';const startFormRefs=useRef<Record<number,HTMLFormElement|null>>({});const openAdd=()=>{setEditing(null);setShowModal(true)};const startEdit=(t:any,e:any)=>{e.stopPropagation();setEditing(t);setShowModal(true)};const occupiedCount=tables.filter((t:any)=>t.status!=='AVAILABLE').length;const availableCount=tables.length-occupiedCount;return <Shell><PaymentSuccessToast/><div className="section-head"><h2 className="page-heading">{kind.toUpperCase()}S</h2>{isAdmin&&<button type="button" className="primary tables-add-btn" onClick={openAdd}><Plus size={16}/> Add {kind}</button>}</div>{!isParcel&&<section className="table-widgets"><article className="table-widget widget-available"><div><small>Available {kind}s</small><strong>{availableCount}</strong></div><span className="widget-icon"><CheckCircle2/></span></article><article className="table-widget widget-occupied"><div><small>Occupied {kind}s</small><strong>{occupiedCount}</strong></div><span className="widget-icon"><Users/></span></article></section>}<div className="table-grid">{tables.map((t:any)=><article className={'table-card '+t.status.toLowerCase()} key={t.id} onClick={(e:any)=>{if((e.target as HTMLElement).closest('button,a,input'))return;if(t.order_id)location.href='/order?id='+t.order_id;else startFormRefs.current[t.id]?.requestSubmit()}}><div className="table-card-body"><div className="table-card-top"><span className="table-card-icon"><Icon size={17}/></span>{!isParcel&&<small>{t.status}</small>}{isAdmin&&<div className="table-card-actions"><button type="button" className="menu-card-icon-btn" title={`Edit ${kind.toLowerCase()}`} onClick={(e:any)=>startEdit(t,e)}><Pencil size={14}/></button></div>}</div><h2>{t.table_name}</h2>{t.order_id&&<b>{money(t.grand_total)}</b>}</div>{!t.order_id&&<form ref={(el:any)=>{startFormRefs.current[t.id]=el}} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="order_create"/><input type="hidden" name="table_id" value={t.id}/></form>}</article>)}</div>{showModal&&<TableModal kind={kind} editing={editing} onClose={()=>setShowModal(false)}/>}</Shell>}
 function TableModal({kind,editing,onClose}:any){useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);const deleteFormRef=useRef<HTMLFormElement>(null);const onDelete=(e:any)=>{if(confirm(`Delete "${editing.table_name}"? This cannot be undone.`)){startButtonLoading(e.currentTarget,'Deleting');deleteFormRef.current?.requestSubmit()}};return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}><div className="modal-panel"><div className="modal-head"><h2>{editing?`Edit ${kind.toLowerCase()}`:`Add ${kind.toLowerCase()}`}</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div>{editing&&<form ref={deleteFormRef} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="table_delete"/><input type="hidden" name="id" value={editing.id}/></form>}<Form key={editing?.id||'new'}><input type="hidden" name="action" value="table_save"/><input type="hidden" name="id" value={editing?.id||0}/><input type="hidden" name="kind" value={kind.toUpperCase()}/><div className="form-grid"><label>{kind} name<input name="table_name" required autoFocus defaultValue={editing?.table_name||''}/></label><label>Display order<input name="sort_order" type="number" defaultValue={editing?.sort_order??0}/></label><label className="check"><input type="checkbox" name="active" defaultChecked={editing?Number(editing.active)===1:true}/>Active</label></div><div className="form-actions"><button className="primary">{editing?`Update ${kind.toLowerCase()}`:`Save ${kind.toLowerCase()}`}</button><button type="button" className="secondary" onClick={onClose}>Cancel</button>{editing&&<button type="button" className="danger" onClick={onDelete}><Trash2 size={14}/> Delete {kind.toLowerCase()}</button>}</div></Form></div></div>}
 function Order(){const d=boot.data;if(d.missing)return <Shell><div className="surface">Order not found.</div></Shell>;return <Shell><OrderEditor order={d.order} menu={d.menu||[]} variants={d.variants||[]} initial={d.items||[]} settings={d.settings||{}}/></Shell>}
 function OrderEditor({order,menu,variants,initial,settings}:any){
@@ -646,7 +699,7 @@ function OrdersPage(){
   // READY has no distinct underlying state yet, so it still maps onto OPEN.
   const statusGroups:Record<string,string[]>={NEW:['DRAFT'],PREPARING:['OPEN'],READY:['OPEN'],SERVED:['SERVED'],COMPLETED:['PAID'],CANCELLED:['CANCELLED']};
   const sameDay=(a:Date,b:Date)=>a.toDateString()===b.toDateString();
-  const inDateRange=(o:any)=>{const d=new Date(o.updated_at||o.created_at);const now=new Date();if(dateFilter==='today')return sameDay(d,now);if(dateFilter==='yesterday'){const y=new Date(now);y.setDate(y.getDate()-1);return sameDay(d,y);}if(dateFilter==='7days'){const from=new Date(now);from.setDate(from.getDate()-6);from.setHours(0,0,0,0);return d>=from;}if(dateFilter==='month')return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();return customDate?sameDay(d,new Date(customDate+'T00:00:00')):true;};
+  const inDateRange=(o:any)=>{const d=new Date(o.updated_at||o.created_at);const now=new Date();if(dateFilter==='all')return true;if(dateFilter==='today')return sameDay(d,now);if(dateFilter==='yesterday'){const y=new Date(now);y.setDate(y.getDate()-1);return sameDay(d,y);}if(dateFilter==='7days'){const from=new Date(now);from.setDate(from.getDate()-6);from.setHours(0,0,0,0);return d>=from;}if(dateFilter==='month')return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();return customDate?sameDay(d,new Date(customDate+'T00:00:00')):true;};
   const filtered=all.filter((o:any)=>{
     if(statusFilter!=='ALL'&&!(statusGroups[statusFilter]||[]).includes(o.status))return false;
     if(tableFilter!=='ALL'&&o.table_name!==tableFilter)return false;
@@ -655,9 +708,11 @@ function OrdersPage(){
     if(search.trim()){const q=search.trim().toLowerCase();const hay=`${o.order_number||''} ${o.bill_number||''} ${o.table_name||''} ${o.display_name||''}`.toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
-  const total=all.length;
-  const completed=all.filter((o:any)=>o.status==='PAID').length;
-  const pending=all.filter((o:any)=>o.status!=='PAID'&&o.status!=='CANCELLED').length;
+  // KPI widgets must mirror the same filtered set the table renders, never
+  // separately-computed global counts.
+  const total=filtered.length;
+  const completed=filtered.filter((o:any)=>o.status==='PAID').length;
+  const pending=filtered.filter((o:any)=>o.status!=='PAID'&&o.status!=='CANCELLED').length;
   const clearFilters=()=>{setSearch('');setDateFilter('today');setCustomDate('');setStatusFilter('ALL');setTableFilter('ALL');setWaiterFilter('ALL');};
   return <Shell>
     <div className="section-head"><h2 className="page-heading">ORDERS</h2><button type="button" className="primary" onClick={()=>setModal({mode:'add'})}><Plus size={16}/> Add Order</button></div>
@@ -669,7 +724,7 @@ function OrdersPage(){
     <section className="orders-toolbar">
       <div className="orders-search"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by order number, table number or waiter name"/></div>
       <div className="orders-filters">
-        <label>Date<select value={dateFilter} onChange={e=>setDateFilter(e.target.value)}><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7days">Last 7 Days</option><option value="month">This Month</option><option value="custom">Custom Date</option></select></label>
+        <label>Date<select value={dateFilter} onChange={e=>setDateFilter(e.target.value)}><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7days">Last 7 Days</option><option value="month">This Month</option><option value="all">All Dates</option><option value="custom">Custom Date</option></select></label>
         {dateFilter==='custom'&&<label>&nbsp;<input className="orders-custom-date" type="date" value={customDate} onChange={e=>setCustomDate(e.target.value)}/></label>}
         <label>Status<select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="ALL">All Status</option><option value="NEW">New</option><option value="PREPARING">Preparing</option><option value="READY">Ready</option><option value="SERVED">Served</option><option value="COMPLETED">Completed</option><option value="CANCELLED">Cancelled</option></select></label>
         <label>Table<select value={tableFilter} onChange={e=>setTableFilter(e.target.value)}><option value="ALL">All Tables</option>{tables.map((t:any)=><option value={t} key={t}>{t}</option>)}</select></label>
@@ -700,32 +755,33 @@ function BillsPage(){
   const [paymentFilter,setPaymentFilter]=useState('ALL');
   const billDate=(o:any)=>new Date(o.completed_at||o.updated_at||o.created_at);
   const sameDay=(a:Date,b:Date)=>a.toDateString()===b.toDateString();
-  const inDateRange=(o:any)=>{const d=billDate(o);const now=new Date();if(dateFilter==='today')return sameDay(d,now);if(dateFilter==='yesterday'){const y=new Date(now);y.setDate(y.getDate()-1);return sameDay(d,y);}if(dateFilter==='7days'){const from=new Date(now);from.setDate(from.getDate()-6);from.setHours(0,0,0,0);return d>=from;}if(dateFilter==='month')return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();return customDate?sameDay(d,new Date(customDate+'T00:00:00')):true;};
+  const inDateRange=(o:any)=>{const d=billDate(o);const now=new Date();if(dateFilter==='all')return true;if(dateFilter==='today')return sameDay(d,now);if(dateFilter==='yesterday'){const y=new Date(now);y.setDate(y.getDate()-1);return sameDay(d,y);}if(dateFilter==='7days'){const from=new Date(now);from.setDate(from.getDate()-6);from.setHours(0,0,0,0);return d>=from;}if(dateFilter==='month')return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();return customDate?sameDay(d,new Date(customDate+'T00:00:00')):true;};
   const filtered=all.filter((o:any)=>{
     if(paymentFilter!=='ALL'&&String(o.method||'').toUpperCase()!==paymentFilter)return false;
     if(!inDateRange(o))return false;
     if(search.trim()){const q=search.trim().toLowerCase();const hay=`${o.bill_number||''} ${o.order_number||''} ${o.table_name||''} ${o.display_name||''}`.toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
-  const now=new Date();
-  const todaysBills=all.filter((o:any)=>sameDay(billDate(o),now));
-  const totalBills=all.length;
-  const todaysSales=todaysBills.reduce((a:number,o:any)=>a+Number(o.grand_total||0),0);
-  const cashToday=todaysBills.filter((o:any)=>String(o.method||'').toUpperCase()==='CASH').reduce((a:number,o:any)=>a+Number(o.grand_total||0),0);
-  const upiToday=todaysBills.filter((o:any)=>String(o.method||'').toUpperCase()==='UPI').reduce((a:number,o:any)=>a+Number(o.grand_total||0),0);
+  // KPI widgets must always mirror the same filtered set the table renders,
+  // never a separately-computed "today" or "global" figure.
+  const totalBills=filtered.length;
+  const sales=filtered.reduce((a:number,o:any)=>a+Number(o.grand_total||0),0);
+  const cash=filtered.filter((o:any)=>String(o.method||'').toUpperCase()==='CASH').reduce((a:number,o:any)=>a+Number(o.grand_total||0),0);
+  const upi=filtered.filter((o:any)=>String(o.method||'').toUpperCase()==='UPI').reduce((a:number,o:any)=>a+Number(o.grand_total||0),0);
+  const salesLabel=dateFilter==='today'?"Today's sales":dateFilter==='yesterday'?"Yesterday's sales":dateFilter==='month'?"This Month's sales":dateFilter==='all'?'Total sales':dateFilter==='7days'?'Last 7 Days sales':'Sales';
   const clearFilters=()=>{setSearch('');setDateFilter('today');setCustomDate('');setPaymentFilter('ALL');};
   return <Shell>
     <h2 className="page-heading">BILLS</h2>
     <section className="metric-grid metric-grid-4 bills-metrics">
       <Metric label="Total bills" value={totalBills} icon={ReceiptText}/>
-      <Metric label="Today's sales" value={money(todaysSales)} icon={IndianRupee}/>
-      <Metric label="Cash" value={money(cashToday)} icon={Wallet}/>
-      <Metric label="UPI" value={money(upiToday)} icon={Smartphone}/>
+      <Metric label={salesLabel} value={money(sales)} icon={IndianRupee}/>
+      <Metric label="Cash" value={money(cash)} icon={Wallet}/>
+      <Metric label="UPI" value={money(upi)} icon={Smartphone}/>
     </section>
     <section className="orders-toolbar">
       <div className="orders-search"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by bill number, order number, table or waiter"/></div>
       <div className="orders-filters">
-        <label>Date<select value={dateFilter} onChange={e=>setDateFilter(e.target.value)}><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7days">Last 7 Days</option><option value="month">This Month</option><option value="custom">Custom Date</option></select></label>
+        <label>Date<select value={dateFilter} onChange={e=>setDateFilter(e.target.value)}><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7days">Last 7 Days</option><option value="month">This Month</option><option value="all">All Dates</option><option value="custom">Custom Date</option></select></label>
         {dateFilter==='custom'&&<label>&nbsp;<input className="orders-custom-date" type="date" value={customDate} onChange={e=>setCustomDate(e.target.value)}/></label>}
         <label>Payment<select value={paymentFilter} onChange={e=>setPaymentFilter(e.target.value)}><option value="ALL">All Payments</option><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="OTHER">Other</option></select></label>
       </div>
