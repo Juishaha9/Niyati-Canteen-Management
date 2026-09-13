@@ -244,7 +244,12 @@ const CATEGORY_ICON_MAP:Record<string,any>={'tea':Coffee,'coffee':Coffee,'tea & 
 const categoryIcon=(name:string)=>CATEGORY_ICON_MAP[String(name||'').trim().toLowerCase()]||Tags;
 const CATEGORY_COLORS=[['var(--primary-soft)','var(--primary-dark)'],['var(--teal-soft)','var(--c-teal)'],['var(--orange-soft)','#b8790a'],['var(--purple-soft)','var(--purple)'],['var(--c-magenta-soft)','var(--c-magenta)'],['var(--blue-soft)','var(--blue)']];
 const categoryColor=(id:number)=>CATEGORY_COLORS[Number(id)%CATEGORY_COLORS.length];
-const NAV_ITEMS=[['dashboard',LayoutDashboard,'Dashboard'],['orders',ClipboardList,'Orders'],['bills',ReceiptText,'Bills'],['tables',Table2,'Tables'],['parcels',Package,'Parcel'],['menu',Utensils,'Menu'],['categories',Tags,'Categories'],['users',Users,'Users'],['reports',BarChart3,'Reports'],['cancelled',ReceiptText,'Cancelled Bills'],['modified',History,'Modified Bills'],['audits',History,'Audit History'],['settings',Settings,'Settings']]; const NAV_BASE_PAGES=['tables','parcels','orders','bills']; const navFor=(user:any)=>user.role==='ADMIN'?NAV_ITEMS:NAV_ITEMS.filter(([key]:any)=>NAV_BASE_PAGES.includes(key)||(user.permissions||[]).includes(key));
+const NAV_ITEMS=[['dashboard',LayoutDashboard,'Dashboard'],['orders',ClipboardList,'Orders'],['bills',ReceiptText,'Bills'],['tables',Table2,'Tables'],['parcels',Package,'Parcel'],['menu',Utensils,'Menu'],['categories',Tags,'Categories'],['users',Users,'Users'],['reports',BarChart3,'Reports'],['cancelled',ReceiptText,'Cancelled Bills'],['modified',History,'Modified Bills'],['audits',History,'Audit History'],['settings',Settings,'Settings']]; // 'settings' is a base nav item (visible to every authenticated user, not
+// just ones with the 'settings' permission) because My Profile lives
+// there and every user needs a discoverable path to their own account —
+// SettingsPage/SettingsTabs independently restrict a non-privileged user
+// to only ever seeing the My Profile tab once they arrive.
+const NAV_BASE_PAGES=['tables','parcels','orders','bills','settings']; const navFor=(user:any)=>user.role==='ADMIN'?NAV_ITEMS:NAV_ITEMS.filter(([key]:any)=>NAV_BASE_PAGES.includes(key)||(user.permissions||[]).includes(key));
 const closeSidebar=()=>document.querySelector('.sidebar')?.classList.remove('collapsed');
 // ===== Fullscreen toggle (desktop "installed app" feel) =====
 // Never auto-requested — only ever called from this button's own click, per
@@ -1983,31 +1988,78 @@ function SimpleRecords(){const d=boot.data;const list=d.audits||[];const rows=li
       <div className="user-card-field"><small>Date &amp; Time</small><b>{new Date(x.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</b></div>
     </div>)}/>}
 const SETTINGS_TABS=[['profile','My Profile'],['business','Business Information'],['order','Order Settings'],['billing','Billing & Payment'],['discount','Discount & Complimentary'],['access','User Access Settings'],['system','System Preferences']];
-function SettingsTabs({tab,onChange,isAdmin}:any){
-  const tabs=isAdmin?SETTINGS_TABS:SETTINGS_TABS.filter(([k]:any)=>k!=='access');
+// Business/Order/Billing/Discount/System are business-configuration tabs
+// gated behind the 'settings' permission (matching settings_save's own
+// independent server-side check); 'access' is admin-only on top of that.
+// My Profile is a personal account tab and is never gated — every
+// authenticated user reaches it regardless of role/permissions.
+function SettingsTabs({tab,onChange,isAdmin,canManageSettings}:any){
+  const tabs=isAdmin?SETTINGS_TABS:canManageSettings?SETTINGS_TABS.filter(([k]:any)=>k!=='access'):SETTINGS_TABS.filter(([k]:any)=>k==='profile');
   return <div className="chips settings-tabs">{tabs.map(([k,label]:any)=><button type="button" className={tab===k?'selected':''} onClick={()=>onChange(k)} key={k}>{label}</button>)}</div>;
+}
+// Floating label: the label sits inside the input's border at rest and
+// rises above it once the field has a value or is focused — driven purely
+// by CSS (:placeholder-shown / :focus), so these stay uncontrolled inputs
+// exactly like the rest of this form (placeholder=" " is the trick that
+// lets :placeholder-shown detect "empty" vs "has a value").
+function FloatingInput({id,label,className,...inputProps}:any){
+  return <div className={'fl-field'+(className?' '+className:'')}>
+    <input id={id} placeholder=" " {...inputProps}/>
+    <label htmlFor={id}>{label}</label>
+  </div>;
 }
 function ProfileSettingsTab({u}:any){
   const [preview,setPreview]=useState<string|null>(null);
+  const [error,setError]=useState<string|null>(null);
+  const [success,setSuccess]=useState<string|null>(null);
+  const [submitting,setSubmitting]=useState(false);
+  // Handled locally (not the app's generic client-nav submit listener) for
+  // the same reason as the Change Password modal: a server error here must
+  // stay on this tab/card, never the page-level flash banner, and the
+  // active Settings tab (plain React state in the parent) already survives
+  // this re-render regardless, since boot.page never changes.
+  const submit=async(e:any)=>{
+    e.preventDefault();
+    if(submitting)return;
+    setError(null); setSuccess(null); setSubmitting(true);
+    try{
+      const fd=new FormData(e.currentTarget);
+      const res=await fetch(location.pathname+location.search,{method:'POST',credentials:'same-origin',body:fd});
+      const html=await res.text();
+      const m=html.match(/window\.__CANTEEN__=(\{[\s\S]*?\});<\/script>/);
+      if(!m){location.href=res.url||location.href;return;}
+      const newBoot=JSON.parse(m[1]);
+      if(newBoot.flash&&newBoot.flash.error){setError(newBoot.flash.error);setSubmitting(false);return;}
+      Object.assign(boot,newBoot); notifyBootChanged&&notifyBootChanged();
+      setPreview(null);
+      setSuccess(newBoot.flash&&newBoot.flash.success||'Profile updated.');
+      setSubmitting(false);
+    }catch{
+      setError('Could not save your profile. Check your connection and try again.');
+      setSubmitting(false);
+    }
+  };
   return <section className="surface form-panel">
     <h2>My Profile</h2>
     <p className="muted">General information for your own account — this does not affect other staff members.</p>
-    <Form encType="multipart/form-data" id="settings-form-profile">
+    {error&&<div className="alert error">{error}</div>}
+    {success&&<div className="alert success">{success}</div>}
+    <Form encType="multipart/form-data" id="settings-form-profile" onSubmit={submit}>
       <input type="hidden" name="action" value="profile_save"/>
-      <div className="form-grid">
-        <label className="wide">Profile icon
-          <input name="avatar" type="file" accept="image/webp" onChange={(e:any)=>{const f=e.target.files?.[0];setPreview(f?URL.createObjectURL(f):null)}}/>
-          <small className="current-image-hint">WebP file, under 2 MB. Leave blank to keep the current icon.</small>
-          {(preview||u.avatar)&&<img className="avatar-preview" src={preview||logoSrc(u.avatar)||''} alt="Current profile icon"/>}
-        </label>
-        <label>Full name<input name="display_name" defaultValue={u.name} required/></label>
-        <label>Email<input name="email" type="email" defaultValue={u.email} required/></label>
-        <label>Mobile number<input name="mobile" type="tel" defaultValue={u.mobile}/></label>
-        <label>Role<input value={u.role} disabled/></label>
+      <label className="profile-avatar-field">Profile icon
+        <input name="avatar" type="file" accept="image/webp" onChange={(e:any)=>{const f=e.target.files?.[0];setPreview(f?URL.createObjectURL(f):null)}}/>
+        <small className="current-image-hint">WebP file, under 2 MB. Leave blank to keep the current icon.</small>
+        {(preview||u.avatar)&&<img className="avatar-preview" src={preview||logoSrc(u.avatar)||''} alt="Current profile icon"/>}
+      </label>
+      <div className="profile-grid">
+        <FloatingInput id="profile-name" label="Username / Full Name" name="display_name" defaultValue={u.name} maxLength={100} required/>
+        <FloatingInput id="profile-email" label="Email" name="email" type="email" defaultValue={u.email} required/>
+        <FloatingInput id="profile-mobile" label="Phone Number" name="mobile" type="tel" defaultValue={u.mobile}/>
+        <FloatingInput id="profile-role" label="Role" value={u.role} disabled/>
       </div>
     </Form>
     <div className="form-actions">
-      <button type="submit" form="settings-form-profile" className="primary">Save changes</button>
+      <button type="submit" form="settings-form-profile" className="primary" disabled={submitting}>{submitting?<><span className="btn-spinner"></span>Saving...</>:'Save changes'}</button>
     </div>
   </section>;
 }
@@ -2294,12 +2346,19 @@ function SystemSettingsTab({s}:any){
 function SettingsPage(){
   const d=boot.data;const s=d.settings||{};
   const isAdmin=boot.user.role==='ADMIN';
-  const [tab,setTab]=useState<string>(()=>new URLSearchParams(location.search).get('tab')||'business');
-  const activeTab=tab==='access'&&!isAdmin?'business':tab;
+  // Business-configuration tabs require the 'settings' permission (same
+  // check settings_save/settings_reset already enforce server-side); My
+  // Profile never does. A user without it is pinned to 'profile' even if
+  // the URL asks for another tab directly (?tab=business), so this is
+  // enforced regardless of how the tab param got there, not just by
+  // hiding the chip.
+  const canManageSettings=isAdmin||(boot.user.permissions||[]).includes('settings');
+  const [tab,setTab]=useState<string>(()=>new URLSearchParams(location.search).get('tab')||(canManageSettings?'business':'profile'));
+  const activeTab=!canManageSettings?'profile':(tab==='access'&&!isAdmin?'business':tab);
   const changeTab=(t:string)=>{setTab(t);const url=new URL(location.href);url.searchParams.set('tab',t);history.replaceState(null,'',url.toString())};
   return <>
     <h2 className="page-heading">SETTINGS</h2>
-    <SettingsTabs tab={activeTab} onChange={changeTab} isAdmin={isAdmin}/>
+    <SettingsTabs tab={activeTab} onChange={changeTab} isAdmin={isAdmin} canManageSettings={canManageSettings}/>
     {activeTab==='profile'&&<ProfileSettingsTab u={boot.user}/>}
     {activeTab==='business'&&<BusinessSettingsTab s={s}/>}
     {activeTab==='order'&&<OrderSettingsTab s={s}/>}

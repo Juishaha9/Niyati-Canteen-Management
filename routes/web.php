@@ -94,7 +94,15 @@ return function(PDO $db): void {
         }
     } catch(Throwable $e){View::flash('error',$e->getMessage()); View::redirect($_SERVER['HTTP_REFERER']??'/');}}
     if(!Auth::check()){ require dirname(__DIR__).'/resources/views/login.php'; return; }
-    $request=array_merge($_GET,$_POST); $base=['tables','parcels','order','orders','bills']; $gated=['dashboard','menu','categories','users','reports','cancelled','modified','audits','settings']; $allowed=$base; foreach($gated as $g){if(Auth::allowed($db,$g))$allowed[]=$g;}
+    // 'settings' is a base (ungated) page because My Profile — a personal
+    // account tab every authenticated user needs regardless of role/
+    // permissions — lives there. The other tabs (Business/Order/Billing/
+    // Discount/User Access/System) stay properly protected: the frontend
+    // only shows them to a user with the 'settings' permission (or ADMIN),
+    // and settings_save/settings_reset independently re-check
+    // Auth::allowed($db,'settings') server-side regardless of page access,
+    // so this change grants no additional write capability to anyone.
+    $request=array_merge($_GET,$_POST); $base=['tables','parcels','order','orders','bills','settings']; $gated=['dashboard','menu','categories','users','reports','cancelled','modified','audits']; $allowed=$base; foreach($gated as $g){if(Auth::allowed($db,$g))$allowed[]=$g;}
     $page=$request['page']??(Auth::can('ADMIN')?'dashboard':'tables'); if(!in_array($page,$allowed,true))$page=Auth::can('ADMIN')?'dashboard':'tables';
     if(isset($_GET['poll'])&&in_array($page,['tables','parcels'],true)){
         header('Content-Type: application/json'); header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0'); header('Pragma: no-cache');

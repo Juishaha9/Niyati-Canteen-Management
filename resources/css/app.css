@@ -583,6 +583,23 @@ tbody tr:hover{background:var(--bg)}
 .form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0;min-width:0;max-width:100%}
 .form-grid label,.filter label{display:grid;gap:6px;font-weight:700;font-size:13px;color:var(--text-soft);min-width:0}
 .form-grid .wide{grid-column:1/-1;min-width:0}
+/* My Profile: its own grid (not .form-grid, which every other Settings tab
+   also uses) so this layout/breakpoint change can't affect them. 2 columns
+   on desktop/tablet, collapsing to 1 in the same mobile breakpoint
+   .form-grid already stacks at. */
+.profile-avatar-field{display:grid;gap:6px;font-weight:700;font-size:13px;color:var(--text-soft);min-width:0;max-width:100%;margin-bottom:20px}
+.profile-avatar-field input[type=file]{width:100%;max-width:100%;box-sizing:border-box}
+.profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:0 0 20px;min-width:0;max-width:100%}
+/* Floating label: sits centered inside the input at rest, rises to a small
+   caption above the text once the field has a value or is focused. Pure
+   CSS (:placeholder-shown needs a non-empty placeholder, hence " " below)
+   so these inputs stay uncontrolled like the rest of this form. */
+.fl-field{position:relative;min-width:0}
+.fl-field input{width:100%;box-sizing:border-box;height:52px;padding:21px 12px 7px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-size:14.5px}
+.fl-field input:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.fl-field input:disabled{color:var(--text-muted);cursor:not-allowed}
+.fl-field label{position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:14.5px;font-weight:600;color:var(--text-muted);pointer-events:none;transition:top .15s ease,font-size .15s ease,color .15s ease;max-width:calc(100% - 26px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fl-field input:focus+label,.fl-field input:not(:placeholder-shown)+label{top:14px;transform:translateY(0);font-size:11px;font-weight:700;color:var(--primary-dark)}
 /* Change password modal: "New password" and "Confirm new password" sit
    side by side, but the grid stretches each label to the tallest sibling's
    height, then the helper text under New password (which Confirm lacks)
@@ -1102,6 +1119,7 @@ tbody tr:hover{background:var(--bg)}
   .modal-overlay{padding:12px}
   .modal-panel{padding:20px 18px 22px;max-height:92vh}
   .form-grid{grid-template-columns:minmax(0,1fr)}
+  .profile-grid{grid-template-columns:minmax(0,1fr)}
   .filter{display:grid;grid-template-columns:1fr 1fr}
   .filter button{grid-column:1/-1}
   .cart{margin-bottom:4px}
