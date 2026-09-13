@@ -65,7 +65,11 @@ function startButtonLoading(btn:HTMLButtonElement|null|undefined,labelOverride?:
     if(btn.isConnected&&btn.getAttribute('data-loading')==='1'){btn.disabled=false;btn.style.minWidth='';btn.removeAttribute('data-loading')}
   },20000);
 }
-if(typeof document!=='undefined'){
+if(boot&&typeof document!=='undefined'){
+  // Gated on `boot` because this whole delegated-listener layer exists for
+  // the authenticated app's own navigation/form UX — the login page (which
+  // has no window.__CANTEEN__) mounts only <InstallBanner/> below and keeps
+  // its own separate, pre-existing submit handling untouched.
   // Same-origin link navigation (sidebar clicks already go through go()
   // above) — e.g. "View Cancelled Bills", an order row link — gets the
   // same content-area loading state as any other module switch.
@@ -221,7 +225,7 @@ function InstallBanner(){
     </div>
   </div>;
 }
-function Shell({children}:any){const nav=navFor(boot.user);return <div className="app"><aside className="sidebar"><div className="brand"><img src="/icons/logo.png" alt="Niyati"/></div><nav>{nav.map(([key,Icon,label]:any)=><button className={boot.page===key?'active':''} onClick={()=>{closeSidebar();go(key)}} key={key}><Icon size={19}/><span>{label}</span></button>)}</nav><Form><input name="action" value="logout" type="hidden"/><button className="logout"><LogOut size={18}/><span>Logout</span></button></Form></aside><div className="sidebar-backdrop" onClick={closeSidebar}/><main className="main"><header className="topbar"><button type="button" className="menu-toggle" onClick={toggleSidebar} title="Toggle menu"><MenuIcon/></button><div className="topbar-right"><FullscreenButton/><AccountMenu/></div></header>{boot.flash.error&&<div className="alert error">{boot.flash.error}</div>}{boot.flash.success&&<div className="alert success">{boot.flash.success}</div>}{children}</main><InstallBanner/></div>}
+function Shell({children}:any){const nav=navFor(boot.user);return <div className="app"><aside className="sidebar"><div className="brand"><img src="/icons/logo.png" alt="Niyati"/></div><nav>{nav.map(([key,Icon,label]:any)=><button className={boot.page===key?'active':''} onClick={()=>{closeSidebar();go(key)}} key={key}><Icon size={19}/><span>{label}</span></button>)}</nav><Form><input name="action" value="logout" type="hidden"/><button className="logout"><LogOut size={18}/><span>Logout</span></button></Form></aside><div className="sidebar-backdrop" onClick={closeSidebar}/><main className="main"><header className="topbar"><button type="button" className="menu-toggle" onClick={toggleSidebar} title="Toggle menu"><MenuIcon/></button><div className="topbar-right"><FullscreenButton/><AccountMenu/></div></header>{boot.flash.error&&<div className="alert error">{boot.flash.error}</div>}{boot.flash.success&&<div className="alert success">{boot.flash.success}</div>}{children}</main></div>}
 function AccountMenu(){
   const [open,setOpen]=useState(false); const [pwOpen,setPwOpen]=useState(false);
   const boxRef=useRef<HTMLDivElement>(null);
@@ -2136,4 +2140,15 @@ function SettingsPage(){
     {activeTab==='system'&&<SystemSettingsTab s={s}/>}
   </Shell>;
 }
-const page=boot.page;const App=page==='dashboard'?Dashboard:page==='tables'||page==='parcels'?Tables:page==='order'?Order:page==='orders'?OrdersPage:page==='menu'?Menu:page==='categories'?Categories:page==='users'?UsersPage:page==='reports'?Reports:page==='audits'?SimpleRecords:page==='settings'?SettingsPage:page==='bills'?BillsPage:page==='cancelled'?CancelledBillsPage:page==='modified'?ModifiedBillsPage:ListPage;createRoot(document.getElementById('root')!).render(<App/>);
+// InstallBanner is mounted once here at the top-level render call — not
+// nested inside Shell — so it covers both the authenticated app (any page,
+// since every page goes through this same bootstrap) and the login page
+// (which has no window.__CANTEEN__/boot and therefore no <App/> at all,
+// just this one banner) without a second, duplicate implementation.
+if(boot){
+  const page=boot.page;const App=page==='dashboard'?Dashboard:page==='tables'||page==='parcels'?Tables:page==='order'?Order:page==='orders'?OrdersPage:page==='menu'?Menu:page==='categories'?Categories:page==='users'?UsersPage:page==='reports'?Reports:page==='audits'?SimpleRecords:page==='settings'?SettingsPage:page==='bills'?BillsPage:page==='cancelled'?CancelledBillsPage:page==='modified'?ModifiedBillsPage:ListPage;
+  createRoot(document.getElementById('root')!).render(<><App/><InstallBanner/></>);
+}else{
+  const pwaRoot=document.getElementById('pwa-install-root');
+  if(pwaRoot)createRoot(pwaRoot).render(<InstallBanner/>);
+}

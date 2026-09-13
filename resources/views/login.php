@@ -122,6 +122,7 @@ $successMsg = View::flash('success');
       </section>
     </div>
   </main>
+  <div id="pwa-install-root"></div>
 
   <script>
     (function () {
@@ -172,4 +173,6 @@ $successMsg = View::flash('success');
       });
     })();
   </script>
+  <?=Vite::scripts()?>
+  <script>if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js');</script>
 </body></html>
