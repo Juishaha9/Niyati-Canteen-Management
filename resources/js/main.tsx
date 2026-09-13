@@ -1,27 +1,24 @@
 // The dynamic page payload is server-shaped; runtime validation remains authoritative in PHP.
 // @ts-nocheck
 import React,{useMemo,useState,useEffect,useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {LayoutDashboard,Table2,Package,ClipboardList,ReceiptText,Utensils,Tags,Users,BarChart3,Percent,Gift,History,Settings,LogOut,Plus,Minus,Search,Printer,IndianRupee,ChevronRight,ChevronDown,Menu as MenuIcon,TrendingUp,XCircle,Pencil,X,Trash2,CheckCircle2,Clock,RotateCcw,Wallet,Smartphone,Coffee,Sunrise,Soup,UtensilsCrossed,Salad,GlassWater,ChefHat,Star,Sandwich,MoreVertical,Eye,Info,ShieldCheck,RefreshCw,AlertTriangle,User,KeyRound,Camera,Maximize2,Minimize2,Download} from 'lucide-react'; import '../css/app.css'; import type {Boot,AnyRecord} from './types';
-declare global{interface Window{__CANTEEN__:Boot}} const boot=window.__CANTEEN__; const money=(v:any)=>'₹'+Number(v||0).toFixed(2); const go=(p:string)=>{showMainLoading();location.href='/'+p}; const Form=({children,method='post',...p}:any)=><form method={method} {...p}>{method==='post'&&<input type="hidden" name="_csrf" value={boot.csrf}/>} {children}</form>; const toggleSidebar=()=>document.querySelector('.sidebar')?.classList.toggle('collapsed');
+declare global{interface Window{__CANTEEN__:Boot}} const boot=window.__CANTEEN__; const money=(v:any)=>'₹'+Number(v||0).toFixed(2); const go=(p:string)=>{location.href='/'+p}; const Form=({children,method='post',...p}:any)=><form method={method} {...p}>{method==='post'&&<input type="hidden" name="_csrf" value={boot.csrf}/>} {children}</form>; const toggleSidebar=()=>document.querySelector('.sidebar')?.classList.toggle('collapsed');
 const settingOn=(k:string,def=true)=>{const v=(boot.data as any)?.settings?.[k];return v===undefined?def:v==='1'};
 
 // ===== System-wide loading/processing UX layer =====
 // This app has no client-side router or fetch-driven data loading — every
 // module switch is a real browser navigation and every Save/Add/Delete is a
-// native form POST-redirect-GET. So "loading UX" here means: (1) an
-// in-content loading state for module navigation (the app shell/sidebar
-// stays exactly as-is; only the main content area shows a centered
-// spinner, since a top-of-page progress bar was explicitly rejected), and
-// (2) a generic per-button processing state applied via one delegated
-// 'submit' listener, so every existing form's submit button gets
+// native form POST-redirect-GET. A React "isNavigating" state can never
+// reliably represent that transition (it lives on the outgoing document,
+// which is torn down mid-navigation, and never fires at all for a
+// form-submit-triggered redirect) — that inconsistency is exactly why the
+// content-area loading indicator now lives as plain static markup directly
+// in resources/views/app.php (inside #root, matching the real Shell's
+// classes), painted by the browser before any JS runs, and replaced
+// wholesale once React mounts. See the comment on .main-loading-overlay in
+// app.css for the full reasoning. This file only owns the per-button
+// processing state below (Save/Add/Delete/Pay etc.), applied via one
+// delegated 'submit' listener so every form's submit button gets
 // consistent feedback with zero changes to each individual component.
-function showMainLoading(){
-  if(typeof document==='undefined')return;
-  const main=document.querySelector('.main'); if(!main||main.querySelector('.main-loading-overlay'))return;
-  const overlay=document.createElement('div');
-  overlay.className='main-loading-overlay';
-  overlay.innerHTML='<span class="main-loading-spinner"></span><span>Loading...</span>';
-  main.appendChild(overlay);
-}
 // Button label -> present-participle ("Save" -> "Saving"), covering every
 // verb actually used across the app's buttons; anything unlisted falls back
 // to a generic e/consonant-aware "+ing" guess rather than being left blank.
@@ -70,18 +67,6 @@ if(boot&&typeof document!=='undefined'){
   // the authenticated app's own navigation/form UX — the login page (which
   // has no window.__CANTEEN__) mounts only <InstallBanner/> below and keeps
   // its own separate, pre-existing submit handling untouched.
-  // Same-origin link navigation (sidebar clicks already go through go()
-  // above) — e.g. "View Cancelled Bills", an order row link — gets the
-  // same content-area loading state as any other module switch.
-  document.addEventListener('click',(e:MouseEvent)=>{
-    if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
-    const a=(e.target as HTMLElement)?.closest?.('a[href]') as HTMLAnchorElement|null;
-    if(!a||a.target==='_blank'||a.hasAttribute('download'))return;
-    try{if(new URL(a.href,location.href).origin!==location.origin)return}catch{return}
-    showMainLoading();
-  });
-  // Form submits get button-level feedback only (below) — not the
-  // content-area overlay too, so the two indicators never compete.
   document.addEventListener('submit',(e:any)=>{
     if(e.defaultPrevented)return; // a component's own validation already blocked this submit
     const submitter=e.submitter as HTMLButtonElement|undefined;
@@ -172,9 +157,34 @@ function useFullscreen(){
   return {supported,isFullscreen,toggle};
 }
 function FullscreenButton(){
+  // Standalone-PWA detection is its own independent, reactive state —
+  // initialized once and updated ONLY by the display-mode media query's
+  // own 'change' event — deliberately never re-derived as a plain function
+  // call inside render, and never driven by Fullscreen API state. That
+  // decoupling is the fix for a real bug: this used to call
+  // isStandaloneDisplay() directly in the render body, so if it ever read
+  // true for even one render (browsers can transiently report display-mode
+  // oddly during a fullscreen-mode transition), the component returned
+  // null and unmounted itself — tearing down useFullscreen's own
+  // fullscreenchange listener along with it, so nothing was left running
+  // to ever bring the button back after Esc/exiting fullscreen. An
+  // installed PWA already runs in its own chrome-free standalone window
+  // (manifest display:standalone), so the Fullscreen API adds nothing
+  // there and the button is hidden — but only for that reason, never for
+  // being mid-fullscreen. In an ordinary browser tab the button always
+  // stays mounted; a full page navigation ends browser fullscreen by
+  // design (the document is destroyed), and this never auto-re-enters it —
+  // only a direct click may request it.
+  const [standalone,setStandalone]=useState(isStandaloneDisplay);
+  useEffect(()=>{
+    const mq=window.matchMedia('(display-mode: standalone)');
+    const onChange=()=>setStandalone(isStandaloneDisplay());
+    mq.addEventListener('change',onChange);
+    return()=>mq.removeEventListener('change',onChange);
+  },[]);
   const {supported,isFullscreen,toggle}=useFullscreen();
-  if(!supported)return null;
-  return <button type="button" className="menu-toggle" onClick={toggle} title={isFullscreen?'Exit full screen':'Full screen'} aria-pressed={isFullscreen}>
+  if(!supported||standalone)return null;
+  return <button type="button" className="menu-toggle" onClick={toggle} title={isFullscreen?'Exit full screen':'Enter full screen'} aria-pressed={isFullscreen}>
     {isFullscreen?<Minimize2 size={19}/>:<Maximize2 size={19}/>}
   </button>;
 }

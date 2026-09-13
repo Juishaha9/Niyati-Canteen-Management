@@ -455,13 +455,29 @@ tbody tr:hover{background:var(--bg)}
 .danger .btn-spinner{border:2px solid rgba(185,28,28,.3);border-top-color:#b91c1c}
 .icon .btn-spinner,.logout .btn-spinner{border:2px solid rgba(75,95,238,.3);border-top-color:var(--primary-dark)}
 @keyframes btn-spin{to{transform:rotate(360deg)}}
-/* Module/page navigation feedback: the app shell (sidebar, topbar) is left
-   completely untouched — only the main content area shows a centered
-   spinner, immediately on click, for the brief moment before the browser
-   swaps in the next page (this app has no client-side router, so a real
-   navigation is what actually completes the transition; this overlay is
-   simply what's visible on the outgoing page in that instant). */
-.main-loading-overlay{position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:5}
+/* Module/page navigation feedback. Since every module switch is a full
+   document navigation (no client-side router), a React "isNavigating"
+   state can never reliably span the gap between the old and new document —
+   it would sometimes fire, sometimes not, depending on which trigger
+   caused the navigation (a link vs. a POST-redirect from Save/Pay/Cancel).
+   So this is rendered as plain, static HTML directly in app.php, inside
+   #root, matching the real Shell's markup/classes exactly (sidebar+brand,
+   empty topbar, centered spinner in main) — it paints the instant the new
+   document's HTML/CSS is parsed, before any JS has even loaded, which is
+   the only point that's actually deterministic for a real navigation.
+   React's createRoot().render() then replaces it wholesale on mount, using
+   the same classes, so there's no layout jump. Normal document flow (not
+   an absolute overlay) is used deliberately: an overlay pinned to inset:0
+   would sit on top of the topbar above it in the same container; a normal
+   flow box below the topbar can't cover it by construction. */
+/* The 80px subtracted below is the topbar's own margin-bottom (24px) plus
+   .main's total vertical padding (24px top + 32px bottom) — i.e. exactly
+   the other space .main's border-box (box-sizing:border-box, min-height:
+   100dvh) has to account for besides the topbar and this box. Matching it
+   here means this placeholder fits the viewport with zero added scroll
+   instead of overflowing by that same fixed amount; if those paddings ever
+   change, update this constant too. */
+.main-loading-overlay{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:calc(100vh - var(--header-h) - 80px);min-height:calc(100dvh - var(--header-h) - 80px)}
 .main-loading-spinner{width:34px;height:34px;border-radius:50%;border:3px solid var(--primary-soft);border-top-color:var(--primary);animation:btn-spin .7s linear infinite}
 .main-loading-overlay span:last-child{color:var(--text-muted);font-weight:600;font-size:13px}
 
