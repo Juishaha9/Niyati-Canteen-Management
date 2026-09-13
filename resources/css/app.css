@@ -142,6 +142,20 @@ h1,h2,h3,p{margin:0}
 .reports-custom-range{display:flex;gap:8px;align-items:center}
 .reports-custom-range input{border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text)}
 .reports-print-btn,.reports-export-btn{white-space:nowrap}
+.reports-print-head{display:none}
+/* Report Section selector + summary metrics: hide the ellipsis-truncated
+   label on this grid specifically (Bills/Orders summary grids intentionally
+   keep it) and stack the period/section controls + action buttons to full
+   width on mobile instead of wrapping into an uneven row. */
+.reports-summary-metrics .metric small{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:break-word}
+@media(max-width:680px){
+  .reports-controls{flex-direction:column;align-items:stretch;width:100%}
+  .reports-period{width:100%}
+  .reports-period select{width:100%;min-width:0}
+  .reports-custom-range{width:100%;flex-wrap:wrap}
+  .reports-custom-range input{flex:1 1 130px;min-width:0}
+  .reports-export-btn,.reports-print-btn{width:100%;justify-content:center}
+}
 
 .report-stats{display:flex;flex-wrap:wrap;gap:28px;padding-top:4px}
 .report-stats>div{min-width:120px}
@@ -161,6 +175,15 @@ h1,h2,h3,p{margin:0}
 .closing-divider{border-top:1px dashed var(--border);margin:8px 0}
 .closing-total{font-size:15.5px}
 .closing-total b{color:var(--c-teal)}
+/* Generic label/value row for a single-card mobile breakdown of a simple
+   2-column report table (e.g. Sales Summary). Reused inside .user-card so
+   it picks up the same background/radius/padding as the rest of the app's
+   mobile report + list cards. */
+.kv-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);min-width:0}
+.kv-row:last-child{border-bottom:0}
+.kv-row span{color:var(--text-soft);font-weight:600;font-size:13px;min-width:0}
+.kv-row b{font-weight:800;color:var(--text);text-align:right;flex-shrink:0;overflow-wrap:break-word;word-break:break-word;min-width:0;max-width:60%}
+.kv-row-total b{color:var(--primary)}
 
 .chart-card{margin-bottom:24px}
 .reports-split .chart-card,.reports-split .waiter-card,.reports-split .peak-card{margin-bottom:0}
@@ -187,7 +210,7 @@ h1,h2,h3,p{margin:0}
 .legend-list b{margin-left:auto;font-weight:800;color:var(--text)}
 
 .payment-bars{display:grid;gap:16px}
-.payment-bar-row{display:grid;grid-template-columns:110px minmax(0,1fr) 90px 44px;gap:14px;align-items:center}
+.payment-bar-row{display:grid;grid-template-columns:110px minmax(0,1fr) minmax(70px,max-content) minmax(40px,max-content);gap:14px;align-items:center}
 .payment-bar-label{display:flex;align-items:center;gap:9px;font-weight:700;font-size:13px;color:var(--text-soft);min-width:0}
 .payment-bar-label i{width:11px;height:11px;border-radius:50%;flex-shrink:0;display:block}
 .payment-bar-track{height:11px;border-radius:999px;background:var(--bg);overflow:hidden}
@@ -223,10 +246,20 @@ h1,h2,h3,p{margin:0}
 
 .peak-icon{width:34px;height:34px;border-radius:var(--radius-sm);flex-shrink:0;display:grid;place-items:center}
 .peak-info{flex:1;min-width:0;display:grid;gap:7px}
-.peak-top{display:flex;justify-content:space-between;gap:10px;font-size:13px}
-.peak-top b{font-weight:700;white-space:nowrap}
-.peak-top span{color:var(--text-muted);font-weight:600;white-space:nowrap}
+.peak-top{display:flex;justify-content:space-between;gap:10px;font-size:13px;min-width:0}
+.peak-top b{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.peak-top span{color:var(--text-muted);font-weight:600;white-space:nowrap;flex-shrink:0}
 .peak-sales{flex-shrink:0;font-weight:800;font-size:14px;min-width:72px;text-align:right}
+/* Waiter row packs an avatar, name+bar, three status pills and a sales
+   figure into one flex line — fine on desktop but too many fixed-width
+   pieces to fit a 320-414px card. Let the pills wrap onto their own full
+   row instead of forcing the whole row into a horizontal scroll. */
+@media(max-width:680px){
+  .waiter-row{flex-wrap:wrap;row-gap:8px}
+  .waiter-info{flex:1 1 150px}
+  .waiter-pills{flex-basis:100%;order:3;flex-wrap:wrap}
+  .waiter-sales{margin-left:auto}
+}
 
 .cancelled-card{display:flex;align-items:center;gap:22px;flex-wrap:wrap;border-left:4px solid var(--c-red)}
 .cancelled-card-icon{width:56px;height:56px;border-radius:var(--radius-md);flex-shrink:0;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,var(--c-magenta),var(--c-red));box-shadow:0 8px 18px rgba(245,50,92,.28)}
@@ -245,7 +278,8 @@ h1,h2,h3,p{margin:0}
 .payment-chip.payment-upi{background:#e8ebfc;color:var(--c-indigo)}
 .payment-chip.payment-other{background:#fff6e0;color:#b8790a}
 
-.by-chip{display:inline-flex;align-items:center;gap:9px;font-weight:600}
+.by-chip{display:inline-flex;align-items:center;gap:9px;font-weight:600;max-width:100%;min-width:0}
+.by-name{min-width:0;overflow-wrap:break-word;word-break:break-word}
 .by-avatar{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:800}
 .row-actions{display:flex;flex-wrap:wrap;gap:6px}
 .row-action{display:inline-flex;align-items:center;gap:5px;border:0;padding:6px 11px;border-radius:999px;font-size:11.5px;font-weight:700;transition:filter .15s ease,transform .15s ease}
@@ -283,6 +317,7 @@ h1,h2,h3,p{margin:0}
 .status-chip.status-open{background:#fff6e0;color:#b8790a}
 .status-chip.status-paid{background:#e1faf3;color:var(--c-teal)}
 .status-chip.status-cancelled{background:#fde8ec;color:var(--c-red)}
+.status-chip.status-modified{background:#e8ebfc;color:var(--c-indigo)}
 
 .role-chip{display:inline-block;padding:5px 11px;border-radius:999px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
 .role-chip.role-admin{background:var(--primary-soft);color:var(--primary-dark)}
@@ -369,22 +404,31 @@ tbody tr:hover{background:var(--bg)}
 .current-image-hint{font-weight:600;color:var(--text-muted);font-size:11px;text-transform:none;letter-spacing:0;margin-top:2px}
 .form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 
+.file-upload{position:relative;width:100%;max-width:100%}
+.file-upload-input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.file-upload-visual{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;border:1.5px dashed var(--border);border-radius:var(--radius-sm);padding:12px 14px;background:var(--bg);color:var(--text-muted);min-height:52px}
+.file-upload-input:hover~.file-upload-visual,.file-upload-input:focus~.file-upload-visual{border-color:var(--primary);color:var(--primary-dark)}
+.file-upload-preview{width:32px;height:32px;object-fit:cover;border-radius:var(--radius-sm);flex-shrink:0}
+.file-upload-text{font-weight:700;font-size:13.5px;color:inherit;display:inline-flex;align-items:center;gap:6px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-upload-text svg{color:var(--c-teal);flex-shrink:0}
+
 .category-search{margin-bottom:24px;background:var(--surface);box-shadow:var(--shadow-sm)}
 .category-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:20px}
-.category-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);padding:20px;display:flex;flex-direction:column;gap:16px;transition:transform .22s cubic-bezier(.22,.9,.3,1.1),box-shadow .22s ease}
+.category-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0;max-width:100%;box-sizing:border-box;transition:transform .22s cubic-bezier(.22,.9,.3,1.1),box-shadow .22s ease}
 .category-card:hover{transform:translateY(-4px);box-shadow:0 16px 32px rgba(17,24,39,.12)}
 .category-card.inactive{opacity:.6}
 .category-delete-form{display:none}
-.category-card-top{display:flex;justify-content:space-between;align-items:flex-start}
+.category-card-top{display:flex;justify-content:space-between;align-items:flex-start;min-width:0}
 .category-icon{width:48px;height:48px;flex-shrink:0;border-radius:var(--radius-md);display:grid;place-items:center}
-.category-card-body h3{font-size:17px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.category-card-body{min-width:0}
+.category-card-body h3{font-size:17px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;overflow-wrap:break-word}
 .category-inactive-badge{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#b91c1c;background:var(--danger-soft);padding:3px 8px;border-radius:999px}
-.category-card-count{display:block;margin-top:6px;color:var(--text-muted);font-size:12.5px;font-weight:600}
-.category-view-btn{width:100%}
-.kebab{position:relative}
+.category-card-count{display:block;margin-top:6px;color:var(--text-muted);font-size:12.5px;font-weight:600;overflow-wrap:break-word}
+.category-view-btn{width:100%;max-width:100%;box-sizing:border-box}
+.kebab{position:relative;flex-shrink:0}
 .kebab-btn{border:0;background:var(--bg);color:var(--text-soft);width:32px;height:32px;border-radius:50%;display:grid;place-items:center;flex-shrink:0}
 .kebab-btn:hover{background:var(--primary-soft);color:var(--primary-dark)}
-.kebab-menu{position:absolute;top:38px;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-md);min-width:172px;padding:6px;z-index:20;display:grid;gap:2px;animation:modal-fade .15s ease}
+.kebab-menu{position:absolute;top:38px;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-md);min-width:172px;max-width:calc(100vw - 32px);padding:6px;z-index:20;display:grid;gap:2px;animation:modal-fade .15s ease}
 .kebab-menu button{border:0;background:transparent;text-align:left;padding:9px 11px;border-radius:var(--radius-sm);display:flex;gap:9px;align-items:center;font-weight:600;font-size:13.5px;color:var(--text);width:100%}
 .kebab-menu button:hover{background:var(--bg)}
 .kebab-menu button.delete{color:var(--danger)}
@@ -403,7 +447,7 @@ tbody tr:hover{background:var(--bg)}
 .settings-card .form-actions{margin-top:22px}
 .form-panel summary{cursor:pointer;font-weight:800;margin-bottom:20px;font-size:15px}
 .form-panel h3{font-size:14px;font-weight:800;margin:22px 0 4px}
-.settings-tabs{padding-top:0}
+.settings-tabs{padding-top:0;flex-wrap:wrap;overflow:visible;width:100%;max-width:100%;min-width:0}
 .logo-preview{width:96px;height:96px;object-fit:contain;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:8px;padding:6px}
 .avatar-preview{width:80px;height:80px;object-fit:cover;background:var(--bg);border:1px solid var(--border);border-radius:50%;margin-top:8px;padding:0}
 .settings-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);padding:26px 28px;margin-bottom:22px}
@@ -458,7 +502,8 @@ tbody tr:hover{background:var(--bg)}
 
 .permission-users{display:grid;gap:14px;margin-top:18px}
 .permission-card{border:1px solid var(--border);border-radius:var(--radius-md);padding:16px 18px}
-.permission-card-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:15px}
+.permission-card-head{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;font-size:15px}
+.permission-card-head b{min-width:0;overflow-wrap:break-word;word-break:break-word}
 .permission-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px 16px;margin:8px 0 16px}
 
 .modal-overlay{position:fixed;inset:0;background:rgba(17,24,39,.52);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;z-index:60;animation:modal-fade .22s ease}
@@ -469,9 +514,34 @@ tbody tr:hover{background:var(--bg)}
 .modal-close:hover{background:var(--danger-soft);color:#b91c1c;transform:rotate(90deg)}
 @keyframes modal-fade{from{opacity:0}to{opacity:1}}
 @keyframes modal-pop{from{opacity:0;transform:translateY(18px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+
+/* Add/Edit menu item modal: mobile-only sizing. Scoped to .menu-modal so
+   other modals sharing .modal-panel/.form-grid are unaffected. This keeps
+   the modal's own proven single scroll container (.modal-panel{overflow:
+   auto}) — no extra nested scroll wrapper, no flex-column restructuring. */
+@media(max-width:680px){
+  .menu-modal{width:calc(100% - 24px);max-width:520px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px)}
+  .menu-modal .modal-head h2{font-size:17px}
+  .menu-modal .form-grid{grid-template-columns:minmax(0,1fr);gap:20px}
+  .menu-modal .form-grid input:not([type=checkbox]),.menu-modal .form-grid select,.menu-modal .form-grid textarea{padding:15px 14px;font-size:15px}
+  .menu-modal textarea{min-height:96px}
+  .menu-modal .file-upload-visual{padding:14px}
+  .menu-modal .form-actions button{flex:1 1 140px}
+}
+@media(max-width:360px){
+  .menu-modal .form-actions{flex-direction:column}
+  .menu-modal .form-actions button{flex:1 1 auto;width:100%}
+}
 .form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0;min-width:0;max-width:100%}
 .form-grid label,.filter label{display:grid;gap:6px;font-weight:700;font-size:13px;color:var(--text-soft);min-width:0}
 .form-grid .wide{grid-column:1/-1;min-width:0}
+/* Change password modal: "New password" and "Confirm new password" sit
+   side by side, but the grid stretches each label to the tallest sibling's
+   height, then the helper text under New password (which Confirm lacks)
+   gets counted into that stretch and pushes Confirm's input down. Pin both
+   labels to the top of their row so each is only as tall as its own
+   content and the inputs land on the same line regardless of helper text. */
+.pw-field{align-self:start}
 .check{display:flex!important;align-items:center;gap:8px}
 .form-grid input:not([type=checkbox]),.form-grid select,.form-grid textarea,.adjustments input,.adjustments select,.cancel input,.filter input{
   border:1px solid var(--border);padding:11px 12px;border-radius:var(--radius-sm);background:var(--bg);width:100%;max-width:100%;box-sizing:border-box;color:var(--text)
@@ -538,6 +608,14 @@ tbody tr:hover{background:var(--bg)}
 .chips{flex:none;display:flex;gap:9px;overflow:auto;padding:14px 0}
 .chips button{white-space:nowrap;border:1px solid var(--border);background:var(--surface);padding:9px 14px;border-radius:999px;color:var(--text-soft);font-weight:600;font-size:13px}
 .chips button.selected{background:linear-gradient(135deg,var(--primary),#6d7cff);color:#fff;border-color:transparent}
+/* Menu management page's category filter: wraps to new rows instead of
+   scrolling horizontally, at every width. */
+.menu-page-chips{flex-wrap:wrap;overflow:visible;width:100%;max-width:100%;min-width:0}
+/* Order screen's category filter: same wrap treatment, plus letting an
+   unusually long category name wrap inside its own chip instead of
+   forcing the chip (and the page) wider than the viewport. */
+.order-category-chips{flex-wrap:wrap;overflow:visible;width:100%;max-width:100%;min-width:0}
+.order-category-chips button{white-space:normal;overflow-wrap:break-word;word-break:break-word;max-width:100%;text-align:center}
 .menu-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:4px}
 .menu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;align-content:start}
 .food-card{overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);cursor:pointer;box-shadow:var(--shadow-sm);transition:transform .22s cubic-bezier(.22,.9,.3,1.1),box-shadow .22s ease,border-color .22s ease}
@@ -557,20 +635,38 @@ tbody tr:hover{background:var(--bg)}
 .cart-lines{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
 .menu-scroll,.cart-lines{scrollbar-width:none;-ms-overflow-style:none}
 .menu-scroll::-webkit-scrollbar,.cart-lines::-webkit-scrollbar{display:none}
-.cart-line{display:grid;grid-template-columns:1fr 92px 74px;gap:10px;padding:12px 22px;border-bottom:1px solid var(--border);align-items:center}
-.cart-line>div:last-child{text-align:right;font-size:13px}
+/* Item row: a compact 2-line card instead of a rigid 3-column grid.
+   Row 1 is name+price against the quantity stepper; row 2 is a single
+   flex-wrap line holding the discount control, the complimentary
+   checkbox and the line total together — on a wide desktop cart panel
+   all three fit on one line, on a phone-width panel the discount select
+   (flex-grow:1) claims the full row on its own and the checkbox+total
+   drop to the next line, still sharing it. No media query needed for
+   this reflow; it falls out of the available width naturally. */
+.cart-line{display:flex;flex-direction:column;gap:8px;padding:14px 22px;border-bottom:1px solid var(--border)}
+.cart-line-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;min-width:0}
+.cart-line-info{min-width:0;flex:1}
 .cart-line b{font-size:14.5px}
-.quantity{display:flex;justify-content:center;align-items:center;gap:8px}
-.quantity button{border:1px solid var(--border);background:var(--bg);color:var(--primary-dark);border-radius:6px;width:28px;height:28px;display:grid;place-items:center}
-.comp{font-size:12.5px;font-weight:600;color:var(--text-soft);display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;cursor:pointer}
-.comp input{width:15px;height:15px;cursor:pointer;accent-color:var(--primary)}
+.quantity{display:flex;justify-content:center;align-items:center;gap:8px;flex-shrink:0}
+.quantity button{border:1px solid var(--border);background:var(--bg);color:var(--primary-dark);border-radius:6px;width:28px;height:28px;display:grid;place-items:center;flex-shrink:0}
+.cart-line-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;min-width:0}
+.comp{font-size:12.5px;font-weight:600;color:var(--text-soft);display:flex;align-items:center;justify-content:flex-start;gap:6px;cursor:pointer;flex-shrink:0}
+.comp input{width:16px;height:16px;cursor:pointer;accent-color:var(--primary);flex-shrink:0}
+.cart-line-total{margin-left:auto;white-space:nowrap;font-size:14.5px;flex-shrink:0}
 .comp-reason-block{padding:12px 22px;display:grid;gap:8px;border-bottom:1px solid var(--border);background:var(--primary-soft)}
 .comp-reason-block label{display:grid;gap:5px;font-size:12.5px;font-weight:700;color:var(--primary-dark)}
 .comp-reason-block select,.comp-reason-block input{font-weight:500;color:var(--text);padding:8px 10px}
 .adjustments{padding:12px 22px;display:grid;gap:9px}
-.field-row{display:grid;grid-template-columns:1fr 120px;gap:9px}
-.totals{padding:10px 22px}
-.totals>div{display:flex;justify-content:space-between;padding:5px 0;font-size:14px}
+/* Order-discount row: same phantom-column problem as item-discount-row
+   below (see comment there) — flex instead of a fixed-column grid so the
+   select isn't squeezed to icon-only width when the value input is absent. */
+.field-row{display:flex;flex-wrap:wrap;gap:9px}
+.field-row select{flex:1 1 220px;min-width:180px;width:auto}
+.field-row input{flex:0 0 100px;min-width:0}
+.totals{padding:10px 22px;min-width:0}
+.totals>div{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:14px;min-width:0}
+.totals>div>span{min-width:0;flex:1;overflow-wrap:break-word}
+.totals>div>b{white-space:nowrap;flex-shrink:0}
 .totals .grand{border-top:1px solid var(--border);margin-top:4px;padding-top:11px;font-size:19px;font-weight:800}
 .cart-actions,.pay-form{padding:0 22px 14px;display:grid}
 .cart-actions button{width:100%;padding:11px}
@@ -691,8 +787,15 @@ tbody tr:hover{background:var(--bg)}
 .alert.success{background:var(--teal-soft);color:#0a7a5a}
 .alert.warning{background:var(--orange-soft);color:#b8790a}
 .alert.warning .form-actions{display:flex;gap:8px;margin-top:10px}
-.item-discount-row{display:grid;grid-template-columns:1fr 74px;gap:6px;margin-top:6px}
-.item-discount-row select,.item-discount-row input{padding:6px 8px;border-radius:8px;border:1px solid var(--border);font-size:12px}
+/* A 2-column grid here would reserve its second column's width even when
+   the value input isn't rendered (type === NONE), squeezing "No item
+   discount" down to just its arrow. Flex only reserves space for what's
+   actually present, and flex-grow:1 lets the select fill the whole
+   .cart-line-controls row when it's alone on it. */
+.item-discount-row{display:flex;flex-wrap:wrap;gap:6px;flex:1 1 200px;min-width:180px}
+.item-discount-row select{flex:1 1 auto;min-width:0;width:auto}
+.item-discount-row input{flex:0 0 68px;min-width:0}
+.item-discount-row select,.item-discount-row input{padding:9px 10px;border-radius:8px;border:1px solid var(--border);font-size:12.5px;min-height:38px}
 
 /* ---- Dashboard ---- */
 .dash-head{margin-bottom:20px}
@@ -782,6 +885,16 @@ tbody tr:hover{background:var(--bg)}
 @media(max-width:680px){
   .orders-metrics{grid-template-columns:minmax(0,1fr)!important}
   .orders-metrics .metric small{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:break-word}
+  .bills-metrics{grid-template-columns:minmax(0,1fr)!important}
+  .bills-metrics .metric small{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:break-word}
+  .bills-metrics .metric strong{overflow-wrap:normal;word-break:normal}
+}
+/* The 4-column bills-metrics grid's 200px-per-card floor (872px total)
+   doesn't fit between the mobile tier above and ~1200px of usable main
+   width, so it needs the same mid-range 2-column tier .metric-grid-7
+   already uses at this exact threshold for the same reason. */
+@media(max-width:1200px) and (min-width:681px){
+  .bills-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
 /* Generic DataTable mobile-card support (opt-in via the mobileRows prop;
@@ -792,14 +905,24 @@ tbody tr:hover{background:var(--bg)}
   .data-table-cards{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;width:100%;max-width:100%}
 }
 .order-list-card{width:100%;max-width:100%;box-sizing:border-box;background:var(--bg);border-radius:var(--radius-md);padding:14px 16px}
-.order-list-card-top{display:flex;justify-content:space-between;align-items:center;gap:10px;min-width:0;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)}
-.order-list-number{color:var(--primary);font-weight:800;font-size:14.5px;min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.order-list-card-top .status-chip{flex-shrink:0}
-.order-list-card-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;padding:3px 0;min-width:0}
+.order-list-card-top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.order-list-number{color:var(--primary);font-weight:800;font-size:14.5px;flex-shrink:0;white-space:nowrap}
+.order-list-card-top .status-chip,.order-list-card-top>b{flex-shrink:0;font-size:15px;font-weight:800}
+.order-list-card-row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px 10px;font-size:13px;padding:3px 0;min-width:0}
 .order-list-card-row span{color:var(--text-muted);font-weight:700;flex-shrink:0}
-.order-list-card-row b{font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+.order-list-card-row .payment-chip{flex-shrink:0}
+.order-list-card-row b{font-weight:700;color:var(--text);min-width:0;flex:1 1 auto;overflow-wrap:break-word;white-space:normal;text-align:right}
 .order-list-card-total-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
-.order-list-card-total-actions b{overflow:visible}
+.order-list-card-total-actions b{overflow:visible;white-space:nowrap;flex-shrink:0}
+
+.user-card{width:100%;max-width:100%;box-sizing:border-box;background:var(--bg);border-radius:var(--radius-md);padding:14px 16px}
+.user-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;min-width:0}
+.user-card-name{font-weight:800;font-size:15px;color:var(--text);min-width:0;overflow-wrap:break-word;word-break:break-word}
+.user-card-email{margin-top:8px;color:var(--text-muted);font-size:13px;font-weight:600;overflow-wrap:break-word;word-break:break-word}
+.user-card-field{margin-top:14px;padding-top:14px;border-top:1px solid var(--border);min-width:0}
+.user-card-field small{display:block;color:var(--text-muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.user-card-field b{display:block;font-weight:700;font-size:14px;color:var(--text);overflow-wrap:break-word;word-break:break-word}
+.user-card-top-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
 
 .dash-collection-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
 .dash-collection-item{background:var(--bg);border-radius:var(--radius-md);padding:19px;text-align:center;min-width:0}
@@ -837,13 +960,26 @@ tbody tr:hover{background:var(--bg)}
   .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .dash-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .split{grid-template-columns:minmax(0,1fr)}
-  .order-layout{grid-template-columns:1fr}
-  .cart{position:static;max-height:none}
+  .order-layout{grid-template-columns:minmax(0,1fr)}
+  .cart{position:static;max-height:none;width:100%;max-width:100%;min-width:0;box-sizing:border-box}
   .menu-area{position:static;max-height:none}
   .menu-scroll{flex:none;overflow:visible}
   .menu-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .cart-lines{flex:none;overflow:visible}
   .form-grid{grid-template-columns:1fr 1fr}
+  /* The item row's name+qty / discount+complimentary+total layout already
+     reflows correctly from the base flex rules above at any width. Mobile
+     only needs tighter horizontal padding and bigger touch targets. */
+  .cart-line{padding:12px 16px}
+  .quantity{gap:6px}
+  .quantity button{width:40px;height:40px;border-radius:8px}
+  .cart-head{padding:14px 16px}
+  .comp-reason-block{padding:12px 16px}
+  .adjustments{padding:12px 16px}
+  .totals{padding:10px 16px}
+  .cart-actions,.pay-form{padding:0 16px 14px}
+  .cart-actions button{padding:13px}
+  .cancel{padding:0 16px 16px}
 }
 /* Mobile: the sidebar becomes a hidden off-canvas drawer instead of a
    permanent rail, so it never squeezes the Dashboard width. The hamburger
@@ -869,14 +1005,22 @@ tbody tr:hover{background:var(--bg)}
   .metric-grid{gap:10px}
   .metric{padding:14px}
   .metric strong{font-size:18px}
-  .table-widgets{grid-template-columns:1fr 1fr;gap:10px}
-  .table-widget{padding:14px;gap:10px}
+  .table-widgets{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .table-widget{padding:14px;gap:10px;min-width:0}
+  .table-widget>div{min-width:0;flex:1 1 auto}
+  .table-widget small{overflow-wrap:normal;white-space:normal}
   .widget-icon{width:44px;height:44px}
   .widget-icon svg{width:20px;height:20px}
   .table-widget strong{font-size:20px}
-  .table-grid{grid-template-columns:1fr 1fr;gap:10px}
-  .table-card{padding:15px;min-height:150px}
+  .table-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .table-card{padding:15px;min-height:150px;min-width:0}
   .table-card h2{font-size:18px}
+  /* Icon + edit button share the top row; the status word moves to its
+     own full-width line below so it always has room to render as one
+     word instead of being squeezed into a letter-by-letter wrap. */
+  .table-card-top{min-width:0;flex-wrap:wrap;row-gap:6px}
+  .table-card-top small{order:3;flex-basis:100%;min-width:0;white-space:normal;overflow-wrap:normal}
+  .table-card-actions{order:2;flex-shrink:0}
   .order-meta{display:block}
   .order-meta small{margin-top:5px}
   .menu-grid{gap:10px}
@@ -884,8 +1028,13 @@ tbody tr:hover{background:var(--bg)}
   .food-card>div{padding:8px}
   .menu-catalog{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
   .menu-card-media{height:110px}
-  .category-grid{grid-template-columns:1fr 1fr;gap:10px}
+  .category-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .category-card{padding:14px}
+  /* In a 2-up grid, a menu anchored right:0 on the LEFT card would open
+     leftward off the edge of the screen. Anchor each column's menu toward
+     the grid's center instead so it always opens within the viewport. */
+  .category-grid .category-card:nth-child(odd) .kebab-menu{left:0;right:auto}
+  .category-grid .category-card:nth-child(even) .kebab-menu{right:0;left:auto}
   .section-head{flex-wrap:wrap;gap:10px}
   .menu-head-right{width:100%;justify-content:space-between}
   .modal-overlay{padding:12px}
@@ -907,7 +1056,15 @@ tbody tr:hover{background:var(--bg)}
   .dash-table-count b{font-size:19px}
   .dash-collection-grid{grid-template-columns:1fr}
   .dash-stat-grid{grid-template-columns:1fr}
-  .payment-bar-row{grid-template-columns:74px minmax(0,1fr) 30px 34px;gap:8px}
+  .payment-bar-row{grid-template-columns:minmax(58px,max-content) minmax(0,1fr) minmax(0,max-content) minmax(0,max-content);gap:8px}
+  .payment-bar-label{font-size:11.5px}
+}
+/* "Available Tables"/"Occupied Tables" plus a fixed-size icon need ~166px
+   of column width to render on one line without wrapping mid-word; that's
+   only reliably available above ~375px in a 2-up grid, so very narrow
+   phones get a single column instead of a squeezed one. */
+@media(max-width:375px){
+  .table-widgets{grid-template-columns:minmax(0,1fr)}
 }
 .print-bill{display:none}
 @media print{
@@ -919,9 +1076,14 @@ tbody tr:hover{background:var(--bg)}
   .main{margin:0!important;width:100%!important;padding:0!important;max-width:none!important;min-height:0!important}
   .sidebar,.topbar,.menu-area,.cart,.alert{display:none!important}
   .order-layout{display:block!important}
-  .reports-controls,.cancelled-card-btn{display:none!important}
+  .reports-controls,.cancelled-card-btn,.view-full-btn{display:none!important}
   .surface,.metric,.table-widget{box-shadow:none!important;border:1px solid #ddd!important}
   .metric-grid,.split{page-break-inside:avoid}
+  .reports-print-head{display:block!important;margin-bottom:18px}
+  .reports-page .page-heading{display:none!important}
+  .reports-print-head h1{margin:0 0 4px;font-size:19px;letter-spacing:-.01em}
+  .reports-print-head p{margin:0;font-size:12px;color:#555;font-weight:600}
+  .report-section-title{page-break-after:avoid}
   .print-bill{display:block;width:100%;max-width:340px;margin:0 auto;font-family:'Courier New',monospace;color:#000;font-size:12px;page-break-after:avoid;page-break-inside:avoid}
   .bill-head{text-align:center;margin-bottom:8px}
   .bill-logo{display:block;margin:0 auto 6px;max-height:52px;max-width:120px;object-fit:contain}

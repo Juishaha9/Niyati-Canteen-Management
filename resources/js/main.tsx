@@ -43,8 +43,8 @@ function ChangePasswordModal({onClose}:any){
         <input type="hidden" name="action" value="change_password"/>
         <div className="form-grid">
           <label className="wide">Current password<input name="current_password" type="password" required autoFocus/></label>
-          <label>New password<input name="new_password" type="password" minLength={8} required value={newPassword} onChange={e=>setNewPassword(e.target.value)}/><small className="current-image-hint">At least 8 characters.</small></label>
-          <label>Confirm new password<input name="confirm_password" type="password" minLength={8} required value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)}/></label>
+          <label className="pw-field">New password<input name="new_password" type="password" minLength={8} required value={newPassword} onChange={e=>setNewPassword(e.target.value)}/><small className="current-image-hint">At least 8 characters.</small></label>
+          <label className="pw-field">Confirm new password<input name="confirm_password" type="password" minLength={8} required value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)}/></label>
         </div>
         <div className="form-actions">
           <button className="primary">Change password</button>
@@ -293,9 +293,9 @@ function OrderEditor({order,menu,variants,initial,settings}:any){
   const compReason=compReasonChoice==='Other'?compReasonOther:compReasonChoice;
   const payload=JSON.stringify({items:items.map((x:any)=>({...x,discount_value:x.discount_value||0,discount_reason:x.complementary?'':x.discount_reason})),discount_type:scopeAllowsOrder?discountType:'NONE',discount_value:discountValue||0,discount_reason:discountReason,complementary_reason:compReason});
   const pending=order.discount_approval_status==='PENDING';
-  return <div className="order-layout"><section className="menu-area"><div className="order-meta"><div><span>{order.table_name}</span><b>{order.order_number}</b></div><small>Opened {new Date(order.created_at).toLocaleString()} by {order.created_by_name}</small></div><div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search menu or category"/></div><div className="chips">{cats.map(c=><button className={c===category?'selected':''} onClick={()=>setCategory(c)} key={c}>{c}</button>)}</div><div className="menu-scroll"><div className="menu-grid">{filtered.map((m:any)=>{const vs=variants.filter((v:any)=>v.menu_item_id===m.id);return <article className="food-card" key={m.id} onClick={()=>!vs.length&&m.price!==null&&add(m)}><img loading="lazy" src={menuImageSrc(m)} alt=""/><div><h3>{m.name}</h3><small>{m.description||m.category_name}</small>{vs.length?<div className="variant-buttons">{vs.map((v:any)=><button type="button" onClick={e=>{e.stopPropagation();add(m,v)}} key={v.id}>{v.name} {money(v.price)}</button>)}</div>:<b>{m.price===null?'Configure price':money(m.price)}</b>}</div></article>})}</div></div></section>
+  return <div className="order-layout"><section className="menu-area"><div className="order-meta"><div><span>{order.table_name}</span><b>{order.order_number}</b></div><small>Opened {new Date(order.created_at).toLocaleString()} by {order.created_by_name}</small></div><div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search menu or category"/></div><div className="chips order-category-chips">{cats.map(c=><button className={c===category?'selected':''} onClick={()=>setCategory(c)} key={c}>{c}</button>)}</div><div className="menu-scroll"><div className="menu-grid">{filtered.map((m:any)=>{const vs=variants.filter((v:any)=>v.menu_item_id===m.id);return <article className="food-card" key={m.id} onClick={()=>!vs.length&&m.price!==null&&add(m)}><img loading="lazy" src={menuImageSrc(m)} alt=""/><div><h3>{m.name}</h3><small>{m.description||m.category_name}</small>{vs.length?<div className="variant-buttons">{vs.map((v:any)=><button type="button" onClick={e=>{e.stopPropagation();add(m,v)}} key={v.id}>{v.name} {money(v.price)}</button>)}</div>:<b>{m.price===null?'Configure price':money(m.price)}</b>}</div></article>})}</div></div></section>
   <aside className="cart">
-    <div className="cart-head"><div><small>Current order</small><h2>{items.length} lines</h2></div><button className="icon" title="Print bill" onClick={()=>window.print()}><Printer size={19}/></button></div>
+    <div className="cart-head"><div><small>Current order</small><h2>{items.length} item{items.length===1?'':'s'}</h2></div><button className="icon" title="Print bill" onClick={()=>window.print()}><Printer size={19}/></button></div>
     {pending&&<div className="alert warning">This bill's discount is pending {isApprover?'your':'admin/manager'} approval and cannot be paid until it is resolved.
       {isApprover&&<div className="form-actions">
         <Form><input type="hidden" name="action" value="discount_approve"/><input type="hidden" name="order_id" value={order.id}/><button className="secondary" type="submit">Approve discount</button></Form>
@@ -303,8 +303,11 @@ function OrderEditor({order,menu,variants,initial,settings}:any){
       </div>}
     </div>}
     <div className="cart-lines">{items.map((x:any,i:number)=>{const gross=Number(x.unit_price)*Number(x.quantity);const lineDiscount=itemDiscountAmount(x,gross);return <div className="cart-line" key={i}>
-      <div><b>{x.item_name_snapshot}{x.variant_name_snapshot&&` · ${x.variant_name_snapshot}`}</b><small>{money(x.unit_price)} each{x.complementary?' · Complimentary':''}{lineDiscount>0?` · -${money(lineDiscount)} off`:''}</small>
-        {compAllowedForRole&&<label className="comp" title="Mark this item complementary"><input type="checkbox" checked={x.complementary} onChange={e=>patch(i,{complementary:e.target.checked})}/>Complementary</label>}
+      <div className="cart-line-top">
+        <div className="cart-line-info"><b>{x.item_name_snapshot}{x.variant_name_snapshot&&` · ${x.variant_name_snapshot}`}</b><small>{money(x.unit_price)} each{x.complementary?' · Complimentary':''}{lineDiscount>0?` · -${money(lineDiscount)} off`:''}</small></div>
+        <div className="quantity"><button onClick={()=>update(i,-1)}><Minus size={15}/></button><span>{x.quantity}</span><button onClick={()=>update(i,1)}><Plus size={15}/></button></div>
+      </div>
+      <div className="cart-line-controls">
         {!x.complementary&&scopeAllowsItem&&<div className="item-discount-row">
           <select value={x.discount_type} onChange={e=>patch(i,{discount_type:e.target.value,discount_value:e.target.value==='NONE'?'':x.discount_value})}>
             <option value="NONE">No item discount</option>
@@ -313,9 +316,9 @@ function OrderEditor({order,menu,variants,initial,settings}:any){
           </select>
           {x.discount_type!=='NONE'&&<input type="number" min="0" value={x.discount_value} onChange={e=>patch(i,{discount_value:e.target.value})} placeholder="Value"/>}
         </div>}
+        {compAllowedForRole&&<label className="comp" title="Mark this item complementary"><input type="checkbox" checked={x.complementary} onChange={e=>patch(i,{complementary:e.target.checked})}/>Complimentary</label>}
+        <b className="cart-line-total">{x.complementary?money(0):money(gross-lineDiscount)}</b>
       </div>
-      <div className="quantity"><button onClick={()=>update(i,-1)}><Minus size={15}/></button><span>{x.quantity}</span><button onClick={()=>update(i,1)}><Plus size={15}/></button></div>
-      <div><b>{x.complementary?money(0):money(gross-lineDiscount)}</b></div>
     </div>})}</div>
     {items.some((x:any)=>x.complementary)&&<div className="comp-reason-block">
       <label>Complementary reason<select value={compReasonChoice} onChange={e=>setCompReasonChoice(e.target.value)}>{COMPLEMENTARY_REASONS.map(r=><option value={r} key={r}>{r}</option>)}</select></label>
@@ -580,12 +583,23 @@ function BillsPage(){
       </div>
       <button type="button" className="clear-filters-btn" onClick={clearFilters}><RotateCcw size={15}/> Clear Filters</button>
     </section>
-    <DataTable title="Bills" headers={['Bill','Time','Order','Table','Waiter','Amount','Payment']} rows={filtered.map((o:any)=>[<a href={'/order?id='+o.id}>{o.bill_number||o.order_number}</a>,billDate(o).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}),o.order_number,o.table_name||'—',o.display_name||'—',money(o.grand_total),<PaymentChip method={o.method}/>])}/>
+    <DataTable title="Bills" headers={['Bill','Time','Order','Table','Waiter','Amount','Payment']} rows={filtered.map((o:any)=>[<a href={'/order?id='+o.id}>{o.bill_number||o.order_number}</a>,billDate(o).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}),o.order_number,o.table_name||'—',o.display_name||'—',money(o.grand_total),<PaymentChip method={o.method}/>])}
+      mobileRows={filtered.map((o:any)=><div className="order-list-card" key={o.id}>
+        <div className="order-list-card-top">
+          <a href={'/order?id='+o.id} className="order-list-number">{o.bill_number||o.order_number}</a>
+          <b>{money(o.grand_total)}</b>
+        </div>
+        <div className="order-list-card-row"><span>Order</span><b>{o.order_number}</b></div>
+        <div className="order-list-card-row"><span>Table</span><b>{o.table_name||'—'}</b></div>
+        <div className="order-list-card-row"><span>Waiter</span><b>{o.display_name||'—'}</b></div>
+        <div className="order-list-card-row"><span>Time</span><b>{billDate(o).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</b></div>
+        <div className="order-list-card-row"><span>Payment</span><PaymentChip method={o.method}/></div>
+      </div>)}/>
   </Shell>;
 }
 const CANCEL_PALETTE=['#fd397a','#38a4f8','#485bbd','#01b393','#f5325c','#ffb822','#6690f4'];
 const paletteColor=(s:string)=>{let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return CANCEL_PALETTE[h%CANCEL_PALETTE.length]};
-function ByChip({name}:any){if(!name)return <span className="muted">—</span>;const c=paletteColor(name);return <span className="by-chip"><span className="by-avatar" style={{background:c}}>{name.trim().slice(0,1).toUpperCase()}</span>{name}</span>}
+function ByChip({name}:any){if(!name)return <span className="muted">—</span>;const c=paletteColor(name);return <span className="by-chip"><span className="by-avatar" style={{background:c}}>{name.trim().slice(0,1).toUpperCase()}</span><span className="by-name">{name}</span></span>}
 function CancelledActions({id}:any){
   return <div className="row-actions">
     <button type="button" className="row-action" style={{background:'rgba(56,164,248,.14)',color:'#1672b9'}} onClick={()=>location.href='/order?id='+id+'&print=1'}><Eye size={13}/> View Bill</button>
@@ -629,7 +643,21 @@ function CancelledBillsPage(){
       money(o.grand_total),
       <ByChip name={o.cancelled_by_name}/>,
       <CancelledActions id={o.id}/>
-    ])}/>
+    ])}
+      mobileRows={filtered.map((o:any)=><div className="user-card" key={o.id}>
+        <div className="user-card-top">
+          <span className="user-card-name">{o.bill_number||o.order_number}</span>
+          <span className="status-chip status-cancelled">Cancelled</span>
+        </div>
+        <div className="user-card-field"><small>Order</small><b>{o.order_number}</b></div>
+        <div className="user-card-field"><small>Date &amp; Time</small><b>{cancelDate(o).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</b></div>
+        <div className="user-card-field"><small>Table</small><b>{o.table_name||'—'}</b></div>
+        <div className="user-card-field"><small>Waiter</small><b>{o.created_by_name||'—'}</b></div>
+        <div className="user-card-field"><small>Cancelled by</small><ByChip name={o.cancelled_by_name}/></div>
+        {o.cancellation_reason&&<div className="user-card-field"><small>Reason</small><b>{o.cancellation_reason}</b></div>}
+        <div className="user-card-field"><small>Total</small><b>{money(o.grand_total)}</b></div>
+        <div className="user-card-field"><CancelledActions id={o.id}/></div>
+      </div>)}/>
   </Shell>;
 }
 const CHANGE_META:Record<string,[any,string,string]>={
@@ -735,12 +763,74 @@ function ModifiedBillsPage(){
         <ByChip name={o.modified_by_name}/>,
         <ModifiedActions id={o.id} onViewChanges={()=>setViewing(o)}/>
       ];
-    })}/>
+    })}
+      mobileRows={filtered.map((o:any)=>{
+        const orig=Number(o.original_total||0),curr=Number(o.grand_total||0);
+        const diffColor=curr>orig?'var(--c-magenta)':curr<orig?'var(--c-teal)':'var(--text-soft)';
+        return <div className="user-card" key={o.id}>
+          <div className="user-card-top">
+            <span className="user-card-name">{o.bill_number||o.order_number}</span>
+            <div className="user-card-top-actions">
+              <span className="status-chip status-modified">Modified</span>
+              <ModifiedActions id={o.id} onViewChanges={()=>setViewing(o)}/>
+            </div>
+          </div>
+          <div className="user-card-field"><small>Modified</small><b>{modDate(o).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</b></div>
+          <div className="user-card-field"><small>Order</small><a href={'/order?id='+o.id}>{o.order_number}</a></div>
+          <div className="user-card-field"><small>Table</small><b>{o.table_name||'—'}</b></div>
+          <div className="user-card-field"><small>Original</small><span className="amount-original">{money(orig)}</span></div>
+          <div className="user-card-field"><small>New amount</small><b style={{color:diffColor}}>{money(curr)}</b></div>
+          <div className="user-card-field"><small>Modified by</small><ByChip name={o.modified_by_name}/></div>
+        </div>;
+      })}/>
     {viewing&&<ChangesModal order={viewing} changes={allChanges.filter((c:any)=>String(c.order_id)===String(viewing.id))} onClose={()=>setViewing(null)}/>}
   </Shell>;
 }
-function MenuModal({editing,categories,onClose}:any){useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}><div className="modal-panel"><div className="modal-head"><h2>{editing?`Edit "${editing.name}"`:'Add menu item'}</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div><Form encType="multipart/form-data" key={editing?.id||'new'}><input type="hidden" name="action" value="menu_save"/><input type="hidden" name="id" value={editing?.id||0}/><div className="form-grid"><label>Name<input name="name" required defaultValue={editing?.name||''}/></label><label>Category<select name="category_id" defaultValue={editing?.category_id||''}>{categories.map((c:any)=><option value={c.id} key={c.id}>{c.name}</option>)}</select></label><label>Price<input name="price" type="number" step="0.01" min="0" defaultValue={editing?.price??''}/></label><label>Display order<input name="sort_order" type="number" defaultValue={editing?.sort_order??0}/></label><label>WebP image{editing&&<small className="current-image-hint">Leave blank to keep the current image</small>}<input name="image" type="file" accept="image/webp"/></label><label className="wide">Description<textarea name="description" defaultValue={editing?.description||''}/></label></div><div className="form-actions"><button className="primary">{editing?'Update menu item':'Save menu item'}</button><button type="button" className="secondary" onClick={onClose}>Cancel</button></div></Form></div></div>}
-function Menu(){const d=boot.data;const items=d.menu||[];const [editing,setEditing]=useState<any>(null);const [showModal,setShowModal]=useState(false);const initialCategory=useMemo(()=>{const id=new URLSearchParams(location.search).get('category');const found=id&&(d.categories||[]).find((c:any)=>String(c.id)===id);return found?found.name:'All'},[]);const [category,setCategory]=useState(initialCategory);const cats=['All',...Array.from(new Set(items.map((m:any)=>m.category_name)))];const filtered=category==='All'?items:items.filter((m:any)=>m.category_name===category);const openAdd=()=>{setEditing(null);setShowModal(true)};const startEdit=(m:any)=>{setEditing(m);setShowModal(true)};const closeModal=()=>setShowModal(false);const confirmDelete=(m:any,e:any)=>{if(!confirm(`Delete "${m.name}"? This cannot be undone.`))e.preventDefault()};return <Shell><section className="menu-catalog-wrap"><div className="section-head"><h2>Menu items</h2><div className="menu-head-right"><span className="muted">{filtered.length} items</span><button type="button" className="primary menu-add-btn" onClick={openAdd}><Plus size={16}/> Add menu item</button></div></div><div className="chips">{cats.map((c:any)=><button type="button" className={c===category?'selected':''} onClick={()=>setCategory(c)} key={c}>{c}</button>)}</div><div className="menu-catalog">{filtered.length?filtered.map((m:any)=><article className="menu-card" key={m.id}><div className="menu-card-media"><img loading="lazy" src={menuImageSrc(m)} alt=""/><div className="menu-card-actions"><button type="button" className="menu-card-icon-btn" title="Edit item" onClick={()=>startEdit(m)}><Pencil size={15}/></button><Form className="menu-card-delete-form" onSubmit={(e:any)=>confirmDelete(m,e)}><input type="hidden" name="action" value="menu_delete"/><input type="hidden" name="id" value={m.id}/><button type="submit" className="menu-card-icon-btn delete" title="Delete item"><Trash2 size={15}/></button></Form></div></div><div className="menu-card-body"><span className="menu-card-tag">{m.category_name}</span><h3>{m.name}</h3><b>{m.price===null?'Price not set':money(m.price)}</b></div></article>):<p className="muted empty-state">{category==='All'?'No menu items yet — add one above.':`No menu items in "${category}" yet.`}</p>}</div></section>{showModal&&<MenuModal editing={editing} categories={d.categories||[]} onClose={closeModal}/>}</Shell>}
+function MenuModal({editing,categories,onClose}:any){
+  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);
+  useEffect(()=>{
+    const prevBody=document.body.style.overflow; const prevHtml=document.documentElement.style.overflow;
+    document.body.style.overflow='hidden'; document.documentElement.style.overflow='hidden';
+    return()=>{document.body.style.overflow=prevBody; document.documentElement.style.overflow=prevHtml};
+  },[]);
+  const [fileName,setFileName]=useState('');
+  const [preview,setPreview]=useState<string|null>(null);
+  const deleteFormRef=useRef<HTMLFormElement>(null);
+  const onDelete=()=>{if(confirm(`Delete "${editing.name}"?\nThis action cannot be undone.`))deleteFormRef.current?.requestSubmit()};
+  return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}>
+    <div className="modal-panel menu-modal">
+      <div className="modal-head"><h2>{editing?`Edit "${editing.name}"`:'Add menu item'}</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div>
+      {editing&&<form ref={deleteFormRef} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="menu_delete"/><input type="hidden" name="id" value={editing.id}/></form>}
+      <Form encType="multipart/form-data" key={editing?.id||'new'}>
+        <input type="hidden" name="action" value="menu_save"/>
+        <input type="hidden" name="id" value={editing?.id||0}/>
+        <div className="form-grid">
+          <label>Name<input name="name" required defaultValue={editing?.name||''}/></label>
+          <label>Category<select name="category_id" defaultValue={editing?.category_id||''}>{categories.map((c:any)=><option value={c.id} key={c.id}>{c.name}</option>)}</select></label>
+          <label>Price<input name="price" type="number" step="0.01" min="0" defaultValue={editing?.price??''}/></label>
+          <label>Display order<input name="sort_order" type="number" defaultValue={editing?.sort_order??0}/></label>
+          <label className="wide">WebP image
+            {editing&&<small className="current-image-hint">Leave blank to keep the current image</small>}
+            <div className="file-upload">
+              <input name="image" type="file" accept="image/webp" className="file-upload-input" onChange={(e:any)=>{const f=e.target.files?.[0];setFileName(f?f.name:'');setPreview(f?URL.createObjectURL(f):null)}}/>
+              <div className="file-upload-visual">
+                {preview?<img src={preview} alt="" className="file-upload-preview"/>:<Camera size={20}/>}
+                <span className="file-upload-text">{fileName?<><CheckCircle2 size={14}/> {fileName}</>:'Upload WebP image'}</span>
+              </div>
+            </div>
+          </label>
+          <label className="wide">Description<textarea name="description" defaultValue={editing?.description||''}/></label>
+        </div>
+        <div className="form-actions">
+          <button className="primary">{editing?'Update menu item':'Save menu item'}</button>
+          <button type="button" className="secondary" onClick={onClose}>Cancel</button>
+          {editing&&<button type="button" className="danger" onClick={onDelete}><Trash2 size={14}/> Delete menu item</button>}
+        </div>
+      </Form>
+    </div>
+  </div>;
+}
+function Menu(){const d=boot.data;const items=d.menu||[];const [editing,setEditing]=useState<any>(null);const [showModal,setShowModal]=useState(false);const initialCategory=useMemo(()=>{const id=new URLSearchParams(location.search).get('category');const found=id&&(d.categories||[]).find((c:any)=>String(c.id)===id);return found?found.name:'All'},[]);const [category,setCategory]=useState(initialCategory);const cats=['All',...Array.from(new Set(items.map((m:any)=>m.category_name)))];const filtered=category==='All'?items:items.filter((m:any)=>m.category_name===category);const openAdd=()=>{setEditing(null);setShowModal(true)};const startEdit=(m:any)=>{setEditing(m);setShowModal(true)};const closeModal=()=>setShowModal(false);return <Shell><section className="menu-catalog-wrap"><div className="section-head"><h2>Menu items</h2><div className="menu-head-right"><span className="muted">{filtered.length} items</span><button type="button" className="primary menu-add-btn" onClick={openAdd}><Plus size={16}/> Add menu item</button></div></div><div className="chips menu-page-chips">{cats.map((c:any)=><button type="button" className={c===category?'selected':''} onClick={()=>setCategory(c)} key={c}>{c}</button>)}</div><div className="menu-catalog">{filtered.length?filtered.map((m:any)=><article className="menu-card" key={m.id}><div className="menu-card-media"><img loading="lazy" src={menuImageSrc(m)} alt=""/><div className="menu-card-actions"><button type="button" className="menu-card-icon-btn" title="Edit item" onClick={()=>startEdit(m)}><Pencil size={15}/></button></div></div><div className="menu-card-body"><span className="menu-card-tag">{m.category_name}</span><h3>{m.name}</h3><b>{m.price===null?'Price not set':money(m.price)}</b></div></article>):<p className="muted empty-state">{category==='All'?'No menu items yet — add one above.':`No menu items in "${category}" yet.`}</p>}</div></section>{showModal&&<MenuModal editing={editing} categories={d.categories||[]} onClose={closeModal}/>}</Shell>}
 function CategoryMenu({onEdit,onView,onDelete}:any){
   const [open,setOpen]=useState(false);
   const boxRef=useRef<HTMLDivElement>(null);
@@ -936,7 +1026,16 @@ function UsersPage(){
       x.display_name,x.email,x.mobile||'—',<RoleChip role={x.role}/>,
       <span className={'status-chip status-'+(Number(x.active)?'paid':'cancelled')}>{Number(x.active)?'Active':'Disabled'}</span>,
       <UserActions u={x} onView={()=>setModal({mode:'view',user:x})} onEdit={()=>setModal({mode:'edit',user:x})} onReset={()=>setModal({mode:'reset',user:x})}/>
-    ])}/>
+    ])}
+      mobileRows={filtered.map((x:any)=><div className="user-card" key={x.id}>
+        <div className="user-card-top">
+          <span className="user-card-name">{x.display_name}</span>
+          <UserActions u={x} onView={()=>setModal({mode:'view',user:x})} onEdit={()=>setModal({mode:'edit',user:x})} onReset={()=>setModal({mode:'reset',user:x})}/>
+        </div>
+        <div className="user-card-email">{x.email}</div>
+        <div className="user-card-field"><small>Role</small><RoleChip role={x.role}/></div>
+        <div className="user-card-field"><small>Status</small><span className={'status-chip status-'+(Number(x.active)?'paid':'cancelled')}>{Number(x.active)?'Active':'Disabled'}</span></div>
+      </div>)}/>
     {modal&&(modal.mode==='add'||modal.mode==='edit')&&<UserModal editing={modal.user} roles={d.roles} onClose={()=>setModal(null)}/>}
     {modal&&modal.mode==='view'&&<UserProfileModal user={modal.user} onClose={()=>setModal(null)}/>}
     {modal&&modal.mode==='reset'&&<ResetPasswordModal user={modal.user} onClose={()=>setModal(null)}/>}
@@ -1091,6 +1190,7 @@ function CancelledSummaryCard({cancelledOrders,cancelledAmount,totalOrders}:any)
   </section>;
 }
 const REPORT_PERIODS=[['today','Today'],['yesterday','Yesterday'],['7days','Last 7 Days'],['month','This Month'],['lastmonth','Last Month'],['custom','Custom Date']];
+const REPORT_SECTIONS=[['summary','Daily Business Summary'],['sales','Daily Sales Report'],['payment','Payment Collection'],['trend','Sales Trend'],['orderType','Order Report'],['orderStatus','Order Status Report'],['menu','Menu Item Performance'],['table','Table Report'],['waiter','Waiter Report'],['discount','Discount Report'],['complementary','Complementary Report'],['cancelled','Cancelled Bills Report'],['modified','Modified Bills Report'],['peak','Peak Business Hours'],['closing','Daily Closing Summary']];
 const ORDER_TYPE_LABEL:Record<string,string>={TABLE:'Dine-In',TAKEAWAY:'Parcel'};
 const GRANULARITY_LABEL:Record<string,string>={hour:'Sales by Hour',day:'Sales by Day',month:'Sales by Month'};
 function StatsCard({title,items,children}:any){
@@ -1101,26 +1201,31 @@ function StatsCard({title,items,children}:any){
   </section>;
 }
 function csvEscape(v:any):string{const s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
-function downloadReportCsv(d:any){
+function downloadReportCsv(d:any,section:string='all'){
   const rows:string[]=[]; const push=(cols:any[])=>rows.push(cols.map(csvEscape).join(','));
   const ov=d.overview||{}; const ms=d.modifiedSummary||{};
   push(['Niyati Canteen Report',`${d.from} to ${d.to}`]); rows.push('');
-  push(['Business Summary']); push(['Total Sales',ov.totalSales]); push(['Total Orders',ov.totalOrders]); push(['Paid Bills',ov.paidBills]); push(['Average Bill',ov.avgOrder]); push(['Cancelled Bills',ov.cancelledOrders]); push(['Discount Given',ov.discounts]); push(['Complimentary',ov.complementary]); rows.push('');
-  push(['Sales Summary']); push(['Gross Sales',ov.grossSales]); push(['Discounts',-Number(ov.discounts||0)]); push(['Complimentary',-Number(ov.complementary||0)]); push(['Net Sales',ov.totalSales]); push(['Cancelled Bills Amount',ov.cancelledAmount]); rows.push('');
-  push(['Payment Collection','Bills','Amount']); (d.payments||[]).forEach((p:any)=>push([p.method,p.bills,p.amount])); rows.push('');
-  push(['Order Report','Orders','Amount']); (d.orderTypeBreakdown||[]).forEach((o:any)=>push([ORDER_TYPE_LABEL[o.order_type]||o.order_type,o.orders,o.sales])); rows.push('');
-  push(['Order Status','Count']); (d.statusBreakdown||[]).forEach((s:any)=>push([ORDER_STATUS_LABEL[s.status]||s.status,s.count])); rows.push('');
-  push(['Top Selling Items','Category','Qty','Sales']); (d.topItems||[]).forEach((x:any)=>push([x.name,x.category,x.qty,x.sales])); rows.push('');
-  push(['Category Sales','Items Sold','Orders','Sales']); (d.categoryPerformance||[]).forEach((x:any)=>push([x.category,x.items_sold,x.orders,x.sales])); rows.push('');
-  push(['Table Performance','Orders','Sales']); (d.tablePerformance||[]).forEach((x:any)=>push([x.table_name,x.orders,x.sales])); rows.push('');
-  push(['Waiter Performance','Orders','Completed','Cancelled','Sales']); (d.waiterPerformance||[]).forEach((x:any)=>push([x.waiter,x.orders,x.completed,x.cancelled,x.sales])); rows.push('');
-  push(['Discount Breakdown','Bills','Amount']); (d.discountBreakdown||[]).forEach((x:any)=>push([x.discount_type,x.bills,x.amount])); rows.push('');
-  push(['Complimentary Breakdown','Orders','Amount']); (d.complimentaryBreakdown||[]).forEach((x:any)=>push([x.reason,x.orders,x.amount])); rows.push('');
-  push(['Cancelled Breakdown','Bills','Amount']); (d.cancelledBreakdown||[]).forEach((x:any)=>push([x.reason,x.bills,x.amount])); rows.push('');
-  push(['Modified Bills','Count','Amount Changed']); push(['',ms.count||0,ms.amountChanged||0]); rows.push('');
-  push(['Peak Hours','Orders','Sales']); (d.peakHours||[]).forEach((x:any)=>push([x.label,x.orders,x.sales]));
+  const blocks:Record<string,()=>void>={
+    summary:()=>{push(['Business Summary']); push(['Total Sales',ov.totalSales]); push(['Total Orders',ov.totalOrders]); push(['Paid Bills',ov.paidBills]); push(['Average Bill',ov.avgOrder]); push(['Cancelled Bills',ov.cancelledOrders]); push(['Discount Given',ov.discounts]); push(['Complimentary',ov.complementary]); rows.push('');},
+    sales:()=>{push(['Sales Summary']); push(['Gross Sales',ov.grossSales]); push(['Discounts',-Number(ov.discounts||0)]); push(['Complimentary',-Number(ov.complementary||0)]); push(['Net Sales',ov.totalSales]); push(['Cancelled Bills Amount',ov.cancelledAmount]); rows.push('');},
+    payment:()=>{push(['Payment Collection','Bills','Amount']); (d.payments||[]).forEach((p:any)=>push([p.method,p.bills,p.amount])); rows.push('');},
+    orderType:()=>{push(['Order Report','Orders','Amount']); (d.orderTypeBreakdown||[]).forEach((o:any)=>push([ORDER_TYPE_LABEL[o.order_type]||o.order_type,o.orders,o.sales])); rows.push('');},
+    orderStatus:()=>{push(['Order Status','Count']); (d.statusBreakdown||[]).forEach((s:any)=>push([ORDER_STATUS_LABEL[s.status]||s.status,s.count])); rows.push('');},
+    menu:()=>{push(['Top Selling Items','Category','Qty','Sales']); (d.topItems||[]).forEach((x:any)=>push([x.name,x.category,x.qty,x.sales])); rows.push(''); push(['Category Sales','Items Sold','Orders','Sales']); (d.categoryPerformance||[]).forEach((x:any)=>push([x.category,x.items_sold,x.orders,x.sales])); rows.push('');},
+    table:()=>{push(['Table Performance','Orders','Sales']); (d.tablePerformance||[]).forEach((x:any)=>push([x.table_name,x.orders,x.sales])); rows.push('');},
+    waiter:()=>{push(['Waiter Performance','Orders','Completed','Cancelled','Sales']); (d.waiterPerformance||[]).forEach((x:any)=>push([x.waiter,x.orders,x.completed,x.cancelled,x.sales])); rows.push('');},
+    discount:()=>{push(['Discount Breakdown','Bills','Amount']); (d.discountBreakdown||[]).forEach((x:any)=>push([x.discount_type,x.bills,x.amount])); rows.push('');},
+    complementary:()=>{push(['Complimentary Breakdown','Orders','Amount']); (d.complimentaryBreakdown||[]).forEach((x:any)=>push([x.reason,x.orders,x.amount])); rows.push('');},
+    cancelled:()=>{push(['Cancelled Breakdown','Bills','Amount']); (d.cancelledBreakdown||[]).forEach((x:any)=>push([x.reason,x.bills,x.amount])); rows.push('');},
+    modified:()=>{push(['Modified Bills','Count','Amount Changed']); push(['',ms.count||0,ms.amountChanged||0]); rows.push('');},
+    peak:()=>{push(['Peak Hours','Orders','Sales']); (d.peakHours||[]).forEach((x:any)=>push([x.label,x.orders,x.sales]));},
+  };
+  const order=['summary','sales','payment','orderType','orderStatus','menu','table','waiter','discount','complementary','cancelled','modified','peak'];
+  if(section==='all'){order.forEach(k=>blocks[k]());}
+  else if(blocks[section]){blocks[section]();}
+  else{push([REPORT_SECTIONS.find(([k])=>k===section)?.[1]||'Report']); push(['This report section has no tabular data to export.']);}
   const blob=new Blob([rows.join('\n')],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`report-${d.period}-${d.from}-to-${d.to}.csv`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`report-${d.period}-${d.from}-to-${d.to}${section&&section!=='all'?'-'+section:''}.csv`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 function TableReportCard({tables}:any){
   const list=tables||[]; const totalOrders=list.reduce((a:number,x:any)=>a+Number(x.orders||0),0); const totalSales=list.reduce((a:number,x:any)=>a+Number(x.sales||0),0);
@@ -1132,7 +1237,13 @@ function TableReportCard({tables}:any){
       {label:'Highest Sales Table',value:highestSales?.table_name||'—',cls:'stat-magenta'},
       {label:'Average Bill',value:money(totalOrders>0?totalSales/totalOrders:0),cls:'stat-teal'},
     ]}/>
-    <DataTable title="Tables" headers={['Table','Orders','Sales','Avg. Bill']} rows={list.map((x:any)=>[x.table_name,x.orders,money(x.sales),money(Number(x.orders)>0?Number(x.sales)/Number(x.orders):0)])}/>
+    <DataTable title="Tables" headers={['Table','Orders','Sales','Avg. Bill']} rows={list.map((x:any)=>[x.table_name,x.orders,money(x.sales),money(Number(x.orders)>0?Number(x.sales)/Number(x.orders):0)])}
+      mobileRows={list.map((x:any,i:number)=><div className="user-card" key={i}>
+        <div className="user-card-top"><span className="user-card-name">{x.table_name}</span></div>
+        <div className="user-card-field"><small>Orders</small><b>{x.orders}</b></div>
+        <div className="user-card-field"><small>Sales</small><b>{money(x.sales)}</b></div>
+        <div className="user-card-field"><small>Avg. Bill</small><b>{money(Number(x.orders)>0?Number(x.sales)/Number(x.orders):0)}</b></div>
+      </div>)}/>
   </>;
 }
 function DiscountReportCard({breakdown,discountGiven}:any){
@@ -1141,7 +1252,16 @@ function DiscountReportCard({breakdown,discountGiven}:any){
   const rows=list.map((x:any)=>[label[x.discount_type]||x.discount_type,x.bills,money(x.amount)]);
   if(list.length)rows.push([<b key="t">Total</b>,<b key="tb">{totalBills}</b>,<b key="ta">{money(totalAmount)}</b>]);
   return <>
-    <DataTable title="Discount Summary" headers={['Discount Type','Bills','Discount Amount']} rows={rows}/>
+    <DataTable title="Discount Summary" headers={['Discount Type','Bills','Discount Amount']} rows={rows}
+      mobileRows={list.length?[...list.map((x:any,i:number)=><div className="user-card" key={i}>
+        <div className="user-card-top"><span className="user-card-name">{label[x.discount_type]||x.discount_type}</span></div>
+        <div className="user-card-field"><small>Bills</small><b>{x.bills}</b></div>
+        <div className="user-card-field"><small>Discount Amount</small><b>{money(x.amount)}</b></div>
+      </div>),<div className="user-card" key="total">
+        <div className="user-card-top"><span className="user-card-name">Total</span></div>
+        <div className="user-card-field"><small>Bills</small><b>{totalBills}</b></div>
+        <div className="user-card-field"><small>Discount Amount</small><b>{money(totalAmount)}</b></div>
+      </div>]:[]}/>
     <StatsCard title="" items={[{label:'Discounted Bills',value:totalBills,cls:'stat-yellow'},{label:'Total Discount',value:money(discountGiven),cls:'stat-magenta'}]}/>
   </>;
 }
@@ -1150,7 +1270,16 @@ function ComplimentaryReportCard({breakdown,complimentaryGiven}:any){
   const rows=list.map((x:any)=>[x.reason,x.orders,money(x.amount)]);
   if(list.length)rows.push([<b key="t">Total</b>,<b key="tb">{totalOrders}</b>,<b key="ta">{money(totalAmount)}</b>]);
   return <>
-    <DataTable title="Complimentary Sales" headers={['Reason','Orders','Amount']} rows={rows}/>
+    <DataTable title="Complimentary Sales" headers={['Reason','Orders','Amount']} rows={rows}
+      mobileRows={list.length?[...list.map((x:any,i:number)=><div className="user-card" key={i}>
+        <div className="user-card-top"><span className="user-card-name">{x.reason}</span></div>
+        <div className="user-card-field"><small>Orders</small><b>{x.orders}</b></div>
+        <div className="user-card-field"><small>Amount</small><b>{money(x.amount)}</b></div>
+      </div>),<div className="user-card" key="total">
+        <div className="user-card-top"><span className="user-card-name">Total</span></div>
+        <div className="user-card-field"><small>Orders</small><b>{totalOrders}</b></div>
+        <div className="user-card-field"><small>Amount</small><b>{money(totalAmount)}</b></div>
+      </div>]:[]}/>
     <StatsCard title="" items={[{label:'Complimentary Orders',value:totalOrders,cls:'stat-periwinkle'},{label:'Complimentary Value',value:money(complimentaryGiven),cls:'stat-teal'}]}/>
   </>;
 }
@@ -1158,7 +1287,16 @@ function CancelledBreakdownTable({breakdown}:any){
   const list=breakdown||[]; const totalBills=list.reduce((a:number,x:any)=>a+Number(x.bills||0),0); const totalAmount=list.reduce((a:number,x:any)=>a+Number(x.amount||0),0);
   const rows=list.map((x:any)=>[x.reason,x.bills,money(x.amount)]);
   if(list.length)rows.push([<b key="t">Total</b>,<b key="tb">{totalBills}</b>,<b key="ta">{money(totalAmount)}</b>]);
-  return <DataTable title="Cancelled Bills by Reason" headers={['Reason','Bills','Amount']} rows={rows}/>;
+  return <DataTable title="Cancelled Bills by Reason" headers={['Reason','Bills','Amount']} rows={rows}
+    mobileRows={list.length?[...list.map((x:any,i:number)=><div className="user-card" key={i}>
+      <div className="user-card-top"><span className="user-card-name">{x.reason}</span></div>
+      <div className="user-card-field"><small>Bills</small><b>{x.bills}</b></div>
+      <div className="user-card-field"><small>Amount</small><b>{money(x.amount)}</b></div>
+    </div>),<div className="user-card" key="total">
+      <div className="user-card-top"><span className="user-card-name">Total</span></div>
+      <div className="user-card-field"><small>Bills</small><b>{totalBills}</b></div>
+      <div className="user-card-field"><small>Amount</small><b>{money(totalAmount)}</b></div>
+    </div>]:[]}/>;
 }
 function ModifiedSummaryCard({summary}:any){
   const s=summary||{}; const rows=(s.rows||[]);
@@ -1168,7 +1306,15 @@ function ModifiedSummaryCard({summary}:any){
       <div><small>Modified Bills</small><b className="stat-indigo">{s.count||0}</b></div>
       <div><small>Total Amount Changed</small><b className="stat-magenta">{money(s.amountChanged)}</b></div>
     </div>
-    {rows.length?<div className="table-scroll"><table><thead><tr><th>Bill</th><th>Original</th><th>Final</th><th>Modified By</th></tr></thead><tbody>{rows.map((r:any,i:number)=>{const diffColor=r.final>r.original?'var(--c-magenta)':r.final<r.original?'var(--c-teal)':'var(--text-soft)';return <tr key={i}><td>{r.bill||'—'}</td><td className="amount-original">{money(r.original)}</td><td><b style={{color:diffColor}}>{money(r.final)}</b></td><td>{r.modifiedBy||'—'}</td></tr>})}</tbody></table></div>:<p className="muted empty-state">No modified bills for this period.</p>}
+    {rows.length?<>
+      <div className="table-scroll data-table-scroll-wrap"><table><thead><tr><th>Bill</th><th>Original</th><th>Final</th><th>Modified By</th></tr></thead><tbody>{rows.map((r:any,i:number)=>{const diffColor=r.final>r.original?'var(--c-magenta)':r.final<r.original?'var(--c-teal)':'var(--text-soft)';return <tr key={i}><td>{r.bill||'—'}</td><td className="amount-original">{money(r.original)}</td><td><b style={{color:diffColor}}>{money(r.final)}</b></td><td>{r.modifiedBy||'—'}</td></tr>})}</tbody></table></div>
+      <div className="data-table-cards">{rows.map((r:any,i:number)=>{const diffColor=r.final>r.original?'var(--c-magenta)':r.final<r.original?'var(--c-teal)':'var(--text-soft)';return <div className="user-card" key={i}>
+        <div className="user-card-top"><span className="user-card-name">{r.bill||'—'}</span></div>
+        <div className="user-card-field"><small>Original</small><span className="amount-original">{money(r.original)}</span></div>
+        <div className="user-card-field"><small>Final</small><b style={{color:diffColor}}>{money(r.final)}</b></div>
+        <div className="user-card-field"><small>Modified By</small><b>{r.modifiedBy||'—'}</b></div>
+      </div>})}</div>
+    </>:<p className="muted empty-state">No modified bills for this period.</p>}
     <button type="button" className="secondary view-full-btn" onClick={()=>location.href='/modified'}>View Modified Bills <ChevronRight size={15}/></button>
   </section>;
 }
@@ -1198,20 +1344,35 @@ function ClosingSummaryCard({ov,payments}:any){
 }
 function Reports(){
   const d=boot.data,ov=d.overview||{},period=d.period||'today';
-  const goPeriod=(p:string)=>location.href='/reports?period='+p;
+  const [section,setSection]=useState<string>(()=>new URLSearchParams(location.search).get('section')||'all');
+  const goPeriod=(p:string)=>location.href='/reports?period='+p+(section!=='all'?'&section='+section:'');
+  const changeSection=(s:string)=>{setSection(s);const url=new URL(location.href);url.searchParams.set('section',s);history.replaceState(null,'',url.toString())};
   const scrollTo=(id:string)=>document.getElementById(id)?.scrollIntoView({behavior:'smooth'});
+  const show=(id:string)=>section==='all'||section===id;
+  const sectionLabel=section==='all'?'All Reports':(REPORT_SECTIONS.find(([k])=>k===section)?.[1]||'Report');
+  const periodLabel=(REPORT_PERIODS.find(([v])=>v===period)?.[1]||period)+` (${d.from} to ${d.to})`;
+  const totalPaymentBills=(d.payments||[]).reduce((a:number,p:any)=>a+Number(p.bills||0),0);
+  const totalPaymentAmount=(d.payments||[]).reduce((a:number,p:any)=>a+Number(p.amount||0),0);
+  const totalOrderTypeOrders=(d.orderTypeBreakdown||[]).reduce((a:number,x:any)=>a+Number(x.orders||0),0);
+  const totalOrderTypeSales=(d.orderTypeBreakdown||[]).reduce((a:number,x:any)=>a+Number(x.sales||0),0);
   return <Shell>
     <div className="reports-page">
+    <div className="reports-print-head">
+      <h1>{d.settings?.canteen_name||d.settings?.business_name||'Canteen'}</h1>
+      <p>{sectionLabel} — {periodLabel}</p>
+    </div>
     <div className="section-head reports-head">
       <h2 className="page-heading">REPORTS</h2>
       <div className="reports-controls">
         <label className="reports-period">Report Period<select value={period} onChange={e=>goPeriod(e.target.value)}>{REPORT_PERIODS.map(([v,l])=><option value={v} key={v}>{l}</option>)}</select></label>
         {period==='custom'&&<Form method="get" className="reports-custom-range"><input type="hidden" name="page" value="reports"/><input type="hidden" name="period" value="custom"/><input type="date" name="from" defaultValue={d.from} required/><input type="date" name="to" defaultValue={d.to} required/><button className="secondary">Apply</button></Form>}
-        <button type="button" className="secondary reports-export-btn" onClick={()=>downloadReportCsv(d)}><ReceiptText size={16}/> Export Report</button>
+        <label className="reports-period">Report Section<select value={section} onChange={e=>changeSection(e.target.value)}><option value="all">All Reports</option>{REPORT_SECTIONS.map(([k,l])=><option value={k} key={k}>{l}</option>)}</select></label>
+        <button type="button" className="secondary reports-export-btn" onClick={()=>downloadReportCsv(d,section)}><ReceiptText size={16}/> Export Report</button>
         <button type="button" className="secondary reports-print-btn" onClick={()=>window.print()}><Printer size={16}/> Print Report</button>
       </div>
     </div>
 
+    {show('summary')&&<>
     <h3 className="report-section-title">Daily Business Summary</h3>
     <section className="metric-grid metric-grid-7 reports-summary-metrics">
       <Metric label="Total Sales" value={money(ov.totalSales)} icon={IndianRupee}/>
@@ -1222,7 +1383,9 @@ function Reports(){
       <Metric label="Discount Given" value={money(ov.discounts)} icon={Percent}/>
       <Metric label="Complimentary" value={money(ov.complementary)} icon={Gift}/>
     </section>
+    </>}
 
+    {show('sales')&&<>
     <h3 className="report-section-title">Daily Sales Report</h3>
     <DataTable title="Sales Summary" headers={['Particular','Amount']} rows={[
       ['Gross Sales',money(ov.grossSales)],
@@ -1230,30 +1393,64 @@ function Reports(){
       ['Complimentary','-'+money(ov.complementary)],
       [<b key="ns">Net Sales</b>,<b key="nsv">{money(ov.totalSales)}</b>],
       ['Cancelled Bills',money(ov.cancelledAmount)],
-    ]}/>
+    ]}
+      mobileRows={[<div className="user-card" key="s">
+        <div className="kv-row"><span>Gross Sales</span><b>{money(ov.grossSales)}</b></div>
+        <div className="kv-row"><span>Discounts</span><b>-{money(ov.discounts)}</b></div>
+        <div className="kv-row"><span>Complimentary</span><b>-{money(ov.complementary)}</b></div>
+        <div className="kv-row kv-row-total"><span>Net Sales</span><b>{money(ov.totalSales)}</b></div>
+        <div className="kv-row"><span>Cancelled Bills</span><b>{money(ov.cancelledAmount)}</b></div>
+      </div>]}/>
+    </>}
 
+    {show('payment')&&<>
     <h3 className="report-section-title">Payment Collection</h3>
     <DataTable title="Payment Summary" headers={['Payment Method','Bills','Amount']} rows={[
       ...(d.payments||[]).map((p:any)=>[p.method,p.bills,money(p.amount)]),
-      ...((d.payments||[]).length?[[<b key="t">Total</b>,<b key="tb">{(d.payments||[]).reduce((a:number,p:any)=>a+Number(p.bills||0),0)}</b>,<b key="ta">{money((d.payments||[]).reduce((a:number,p:any)=>a+Number(p.amount||0),0))}</b>]]:[]),
-    ]}/>
+      ...((d.payments||[]).length?[[<b key="t">Total</b>,<b key="tb">{totalPaymentBills}</b>,<b key="ta">{money(totalPaymentAmount)}</b>]]:[]),
+    ]}
+      mobileRows={(d.payments||[]).length?[...(d.payments||[]).map((p:any,i:number)=><div className="user-card" key={i}>
+        <div className="user-card-top"><span className="user-card-name">{p.method}</span></div>
+        <div className="user-card-field"><small>Bills</small><b>{p.bills}</b></div>
+        <div className="user-card-field"><small>Amount</small><b>{money(p.amount)}</b></div>
+        <div className="user-card-field"><small>Share Of Collection</small><b>{totalPaymentAmount>0?Math.round(Number(p.amount||0)/totalPaymentAmount*100):0}%</b></div>
+      </div>),<div className="user-card" key="total">
+        <div className="user-card-top"><span className="user-card-name">Total</span></div>
+        <div className="user-card-field"><small>Bills</small><b>{totalPaymentBills}</b></div>
+        <div className="user-card-field"><small>Amount</small><b>{money(totalPaymentAmount)}</b></div>
+      </div>]:[]}/>
     <section className="surface chart-card">
       <PaymentBars data={d.payments||[]}/>
       <div className="report-stats">{(d.payments||[]).map((p:any,i:number)=><div key={i}><small>{p.method} Collection</small><b style={{color:PAYMENT_COLORS[String(p.method||'').toUpperCase()]||'var(--text)'}}>{money(p.amount)}</b></div>)}</div>
     </section>
+    </>}
 
+    {show('trend')&&<>
     <h3 className="report-section-title">Sales Trend</h3>
     <section className="surface chart-card">
       <h2>{GRANULARITY_LABEL[d.granularity]||'Sales Trend'}</h2>
       <AreaChart data={d.trend||[]} valueKey="sales" color="#fd397a" format={money}/>
     </section>
+    </>}
 
+    {show('orderType')&&<>
     <h3 className="report-section-title">Order Report</h3>
     <DataTable title="Order Summary" headers={['Order Type','Orders','Amount']} rows={[
       ...(d.orderTypeBreakdown||[]).map((x:any)=>[ORDER_TYPE_LABEL[x.order_type]||x.order_type,x.orders,money(x.sales)]),
-      ...((d.orderTypeBreakdown||[]).length?[[<b key="t">Total</b>,<b key="tb">{(d.orderTypeBreakdown||[]).reduce((a:number,x:any)=>a+Number(x.orders||0),0)}</b>,<b key="ta">{money((d.orderTypeBreakdown||[]).reduce((a:number,x:any)=>a+Number(x.sales||0),0))}</b>]]:[]),
-    ]}/>
+      ...((d.orderTypeBreakdown||[]).length?[[<b key="t">Total</b>,<b key="tb">{totalOrderTypeOrders}</b>,<b key="ta">{money(totalOrderTypeSales)}</b>]]:[]),
+    ]}
+      mobileRows={(d.orderTypeBreakdown||[]).length?[...(d.orderTypeBreakdown||[]).map((x:any,i:number)=><div className="user-card" key={i}>
+        <div className="user-card-top"><span className="user-card-name">{ORDER_TYPE_LABEL[x.order_type]||x.order_type}</span></div>
+        <div className="user-card-field"><small>Orders</small><b>{x.orders}</b></div>
+        <div className="user-card-field"><small>Amount</small><b>{money(x.sales)}</b></div>
+      </div>),<div className="user-card" key="total">
+        <div className="user-card-top"><span className="user-card-name">Total</span></div>
+        <div className="user-card-field"><small>Orders</small><b>{totalOrderTypeOrders}</b></div>
+        <div className="user-card-field"><small>Amount</small><b>{money(totalOrderTypeSales)}</b></div>
+      </div>]:[]}/>
+    </>}
 
+    {show('orderStatus')&&<>
     <h3 className="report-section-title">Order Status Report</h3>
     <section className="split reports-split">
       <div className="surface chart-card">
@@ -1265,41 +1462,72 @@ function Reports(){
         <StatusDonut data={d.statusBreakdown||[]}/>
       </div>
     </section>
+    </>}
 
+    {show('menu')&&<>
     <h3 className="report-section-title">Menu Item Performance</h3>
     <TopSellingCard items={d.topItems||[]} onViewAll={()=>scrollTo('category-sales')}/>
 
     <h3 className="report-section-title" id="category-sales">Category Sales</h3>
-    <DataTable className="reports-category-table" title="Category Performance" headers={['Category','Items Sold','Orders','Sales']} rows={(d.categoryPerformance||[]).map((x:any)=>[x.category,x.items_sold,x.orders,money(x.sales)])}/>
+    <DataTable className="reports-category-table" title="Category Performance" headers={['Category','Items Sold','Orders','Sales']} rows={(d.categoryPerformance||[]).map((x:any)=>[x.category,x.items_sold,x.orders,money(x.sales)])}
+      mobileRows={(d.categoryPerformance||[]).map((x:any,i:number)=><div className="user-card" key={i}>
+        <div className="user-card-top"><span className="user-card-name">{x.category}</span></div>
+        <div className="user-card-field"><small>Items Sold</small><b>{x.items_sold}</b></div>
+        <div className="user-card-field"><small>Orders</small><b>{x.orders}</b></div>
+        <div className="user-card-field"><small>Sales</small><b>{money(x.sales)}</b></div>
+      </div>)}/>
+    </>}
 
+    {show('table')&&<>
     <h3 className="report-section-title">Table Report</h3>
     <TableReportCard tables={d.tablePerformance||[]}/>
+    </>}
 
+    {show('waiter')&&<>
     <h3 className="report-section-title">Waiter Report</h3>
     <WaiterPerformanceCard waiters={d.waiterPerformance||[]}/>
+    </>}
 
+    {show('discount')&&<>
     <h3 className="report-section-title">Discount Report</h3>
     <DiscountReportCard breakdown={d.discountBreakdown||[]} discountGiven={ov.discounts}/>
+    </>}
 
+    {show('complementary')&&<>
     <h3 className="report-section-title">Complementary Report</h3>
     <ComplimentaryReportCard breakdown={d.complimentaryBreakdown||[]} complimentaryGiven={ov.complementary}/>
+    </>}
 
+    {show('cancelled')&&<>
     <h3 className="report-section-title">Cancelled Bills Report</h3>
     <CancelledSummaryCard cancelledOrders={ov.cancelledOrders} cancelledAmount={ov.cancelledAmount} totalOrders={ov.totalOrders}/>
     <CancelledBreakdownTable breakdown={d.cancelledBreakdown||[]}/>
+    </>}
 
+    {show('modified')&&<>
     <h3 className="report-section-title">Modified Bills Report</h3>
     <ModifiedSummaryCard summary={d.modifiedSummary}/>
+    </>}
 
+    {show('peak')&&<>
     <h3 className="report-section-title">Peak Business Hours</h3>
     <PeakHoursCard hours={d.peakHours||[]}/>
+    </>}
 
+    {show('closing')&&<>
     <h3 className="report-section-title">Daily Closing Summary</h3>
     <ClosingSummaryCard ov={ov} payments={d.payments||[]}/>
+    </>}
     </div>
   </Shell>;
 }
-function SimpleRecords(){const d=boot.data;const rows=(d.audits||[]).map((x:any)=>[x.action,x.bill_number||x.order_number,x.display_name,new Date(x.created_at).toLocaleString()]);return <Shell><DataTable title="Audit history" headers={['Action','Order','User','At']} rows={rows}/></Shell>}
+function SimpleRecords(){const d=boot.data;const list=d.audits||[];const rows=list.map((x:any)=>[x.action,x.bill_number||x.order_number,x.display_name,new Date(x.created_at).toLocaleString()]);return <Shell><DataTable title="Audit history" headers={['Action','Order','User','At']} rows={rows}
+    mobileRows={list.map((x:any,i:number)=><div className="user-card" key={x.id||i}>
+      <div className="user-card-top"><span className="user-card-name">{x.action}</span></div>
+      <div className="user-card-field"><small>Order</small><b>{x.bill_number||x.order_number||'—'}</b></div>
+      <div className="user-card-field"><small>User</small><b>{x.display_name}</b></div>
+      <div className="user-card-field"><small>Date &amp; Time</small><b>{new Date(x.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</b></div>
+    </div>)}/></Shell>}
 const SETTINGS_TABS=[['profile','My Profile'],['business','Business Information'],['order','Order Settings'],['billing','Billing & Payment'],['discount','Discount & Complimentary'],['access','User Access Settings'],['system','System Preferences']];
 function SettingsTabs({tab,onChange,isAdmin}:any){
   const tabs=isAdmin?SETTINGS_TABS:SETTINGS_TABS.filter(([k]:any)=>k!=='access');
