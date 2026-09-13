@@ -8,5 +8,9 @@
 !/storage/sessions/.gitkeep
 /storage/uploads/menu/*
 !/storage/uploads/menu/.gitkeep
+/storage/uploads/avatars/*
+!/storage/uploads/avatars/.gitkeep
+/storage/uploads/business/*
+!/storage/uploads/business/.gitkeep
 node_modules/
 dist/
