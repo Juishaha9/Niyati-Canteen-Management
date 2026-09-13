@@ -157,33 +157,20 @@ function useFullscreen(){
   return {supported,isFullscreen,toggle};
 }
 function FullscreenButton(){
-  // Standalone-PWA detection is its own independent, reactive state —
-  // initialized once and updated ONLY by the display-mode media query's
-  // own 'change' event — deliberately never re-derived as a plain function
-  // call inside render, and never driven by Fullscreen API state. That
-  // decoupling is the fix for a real bug: this used to call
-  // isStandaloneDisplay() directly in the render body, so if it ever read
-  // true for even one render (browsers can transiently report display-mode
-  // oddly during a fullscreen-mode transition), the component returned
-  // null and unmounted itself — tearing down useFullscreen's own
-  // fullscreenchange listener along with it, so nothing was left running
-  // to ever bring the button back after Esc/exiting fullscreen. An
-  // installed PWA already runs in its own chrome-free standalone window
-  // (manifest display:standalone), so the Fullscreen API adds nothing
-  // there and the button is hidden — but only for that reason, never for
-  // being mid-fullscreen. In an ordinary browser tab the button always
-  // stays mounted; a full page navigation ends browser fullscreen by
-  // design (the document is destroyed), and this never auto-re-enters it —
-  // only a direct click may request it.
-  const [standalone,setStandalone]=useState(isStandaloneDisplay);
-  useEffect(()=>{
-    const mq=window.matchMedia('(display-mode: standalone)');
-    const onChange=()=>setStandalone(isStandaloneDisplay());
-    mq.addEventListener('change',onChange);
-    return()=>mq.removeEventListener('change',onChange);
-  },[]);
+  // isStandalone (installed-PWA state) and isFullscreen (Fullscreen API
+  // state) are deliberately independent. An installed PWA's standalone
+  // window and true browser/OS fullscreen are two distinct, stackable
+  // modes — standalone removes the browser's own tabs/address bar, but the
+  // Fullscreen API still adds real edge-to-edge fullscreen on top of that,
+  // and the user can toggle it either way. So standalone state must never
+  // gate this button's existence, only isFullscreen may ever affect what's
+  // rendered (icon/label/aria-pressed) — the button always stays mounted
+  // in both a normal browser tab and an installed PWA. A full page
+  // navigation ends browser fullscreen by design (the document is
+  // destroyed), and this never auto-re-enters it — only a direct click may
+  // request it.
   const {supported,isFullscreen,toggle}=useFullscreen();
-  if(!supported||standalone)return null;
+  if(!supported)return null;
   return <button type="button" className="menu-toggle" onClick={toggle} title={isFullscreen?'Exit full screen':'Enter full screen'} aria-pressed={isFullscreen}>
     {isFullscreen?<Minimize2 size={19}/>:<Maximize2 size={19}/>}
   </button>;
