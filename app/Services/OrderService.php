@@ -14,10 +14,21 @@ final class OrderService {
             if ($open) { $this->db->commit(); return (int)$open['id']; }
             $orderType=$table['kind']==='PARCEL'?'TAKEAWAY':'TABLE';
             $s=$this->db->prepare("INSERT INTO orders(table_id,order_type,status,created_by,updated_by) VALUES(?,?,'DRAFT',?,?)"); $s->execute([$tableId,$orderType,$user['id'],$user['id']]); $id=(int)$this->db->lastInsertId();
-            $number=str_replace('{seq}',(string)($id+1000),$numberFormat); $this->db->prepare('UPDATE orders SET order_number=? WHERE id=?')->execute([$number,$id]);
+            $number=str_replace('{seq}',(string)$this->nextOrderSequence(),$numberFormat); $this->db->prepare('UPDATE orders SET order_number=? WHERE id=?')->execute([$number,$id]);
             $this->db->prepare("UPDATE canteen_tables SET status='OCCUPIED' WHERE id=?")->execute([$tableId]);
             $this->audit->order($id,$user['id'],'ORDER_CREATED',null,['table_id'=>$tableId,'order_number'=>$number]); $this->db->commit(); return $id;
         } catch (\Throwable $e) { if($this->db->inTransaction())$this->db->rollBack(); throw $e; }
+    }
+    // Same atomic pattern as nextBillSequence(): FOR UPDATE locks the single
+    // counter row until the caller's transaction (create(), above) commits
+    // or rolls back, so concurrent order creation never duplicates a number
+    // and a failed/rolled-back create never wastes one. Independent of
+    // orders.id and of any date, so it never resets.
+    private function nextOrderSequence(): int {
+        $row=$this->one('SELECT next_number FROM order_sequence WHERE id=1 FOR UPDATE');
+        $n=(int)$row['next_number'];
+        $this->db->prepare('UPDATE order_sequence SET next_number=? WHERE id=1')->execute([$n+1]);
+        return $n;
     }
     public function update(int $orderId, int $tableId, string $status, string $orderType, array $user, bool $isAdmin=false): void {
         if (!in_array($status,['DRAFT','OPEN','SERVED'],true)) throw new \InvalidArgumentException('Invalid status.');
@@ -103,7 +114,24 @@ final class OrderService {
         return in_array($user['role']??'',['ADMIN','MANAGER'],true)?'APPROVED':'PENDING';
     }
     private function discount(int $orderId,float $base,array $p,array $user,bool $allowed,array $allowedTypes,float $maxPercent,float $maxFixed): float { $type=$p['discount_type']??'NONE';$value=Validator::money($p['discount_value']??0,'discount');$reason=trim((string)($p['discount_reason']??''))?:null;$this->db->prepare('UPDATE discounts SET active=0 WHERE order_id=? AND active=1')->execute([$orderId]);if(!$allowed||$type==='NONE'||$value==0)return 0;if(!in_array($type,['PERCENT','FIXED'],true))throw new \InvalidArgumentException('Invalid discount type.');if(!in_array($type,$allowedTypes,true))throw new \InvalidArgumentException('That discount type is not enabled in Settings.');$value=$type==='PERCENT'?min($value,$maxPercent):min($value,$maxFixed);$amount=$type==='PERCENT'?round($base*$value/100,2):$value;$amount=min(max(0,$base),$amount);$this->db->prepare('INSERT INTO discounts(order_id,discount_type,discount_value,discount_amount,reason,applied_by) VALUES(?,?,?,?,?,?)')->execute([$orderId,$type,$value,$amount,$reason,$user['id']]);return $amount; }
-    public function pay(int $id,string $method,array $user,string $billNumberFormat='BILL-{seq}',bool $autoFreeTable=true): void {$this->db->beginTransaction();try{$o=$this->one('SELECT * FROM orders WHERE id=? FOR UPDATE',[$id]);if(!$o||!in_array($o['status'],['OPEN','SERVED'],true))throw new \InvalidArgumentException('Only an open order with saved items can be paid.');if($o['discount_approval_status']==='PENDING')throw new \InvalidArgumentException('This order has a discount pending admin/manager approval.');if(!in_array($method,['CASH','UPI','OTHER'],true))throw new \InvalidArgumentException('Invalid payment method.');$bill=str_replace('{seq}',(string)($id+1000),$billNumberFormat);$this->db->prepare("UPDATE orders SET status='PAID',payment_status='PAID',bill_number=?,completed_at=NOW(),updated_by=? WHERE id=?")->execute([$bill,$user['id'],$id]);$this->db->prepare('INSERT INTO payments(order_id,method,amount,received_by)VALUES(?,?,?,?)')->execute([$id,$method,$o['grand_total'],$user['id']]);if($autoFreeTable)$this->db->prepare("UPDATE canteen_tables SET status='AVAILABLE' WHERE id=?")->execute([$o['table_id']]);$this->audit->bill($id,$user['id'],'BILL_PAID',null,['bill_number'=>$bill,'method'=>$method,'amount'=>$o['grand_total']]);$this->db->commit();}catch(\Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}}
+    public function pay(int $id,string $method,array $user,string $billNumberFormat='BILL-{seq}',bool $autoFreeTable=true): void {$this->db->beginTransaction();try{$o=$this->one('SELECT * FROM orders WHERE id=? FOR UPDATE',[$id]);if(!$o||!in_array($o['status'],['OPEN','SERVED'],true))throw new \InvalidArgumentException('Only an open order with saved items can be paid.');if($o['discount_approval_status']==='PENDING')throw new \InvalidArgumentException('This order has a discount pending admin/manager approval.');if(!in_array($method,['CASH','UPI','OTHER'],true))throw new \InvalidArgumentException('Invalid payment method.');$bill=str_replace('{seq}',(string)$this->nextBillSequence(),$billNumberFormat);$this->db->prepare("UPDATE orders SET status='PAID',payment_status='PAID',bill_number=?,completed_at=NOW(),updated_by=? WHERE id=?")->execute([$bill,$user['id'],$id]);$this->db->prepare('INSERT INTO payments(order_id,method,amount,received_by)VALUES(?,?,?,?)')->execute([$id,$method,$o['grand_total'],$user['id']]);if($autoFreeTable)$this->db->prepare("UPDATE canteen_tables SET status='AVAILABLE' WHERE id=?")->execute([$o['table_id']]);$this->audit->bill($id,$user['id'],'BILL_PAID',null,['bill_number'=>$bill,'method'=>$method,'amount'=>$o['grand_total']]);$this->db->commit();}catch(\Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}}
+    // Atomically claims the next bill number from the dedicated sequence
+    // table, inside the caller's existing transaction (pay(), above).
+    // SELECT ... FOR UPDATE takes an exclusive lock on the single counter
+    // row that's held until that transaction commits or rolls back, so a
+    // second concurrent payment blocks here until the first resolves
+    // (never reads the same value — requirement: no duplicate numbers) and,
+    // if the first payment fails and rolls back, the UPDATE below never
+    // took effect, so the number it "claimed" is naturally handed to
+    // whichever transaction goes next (requirement: no wasted numbers on a
+    // failed transaction). This is independent of orders.id and of the
+    // current date — it only ever moves forward.
+    private function nextBillSequence(): int {
+        $row=$this->one('SELECT next_number FROM bill_sequence WHERE id=1 FOR UPDATE');
+        $n=(int)$row['next_number'];
+        $this->db->prepare('UPDATE bill_sequence SET next_number=? WHERE id=1')->execute([$n+1]);
+        return $n;
+    }
     public function approveDiscount(int $id,array $user):void{$this->db->beginTransaction();try{$o=$this->one('SELECT * FROM orders WHERE id=? FOR UPDATE',[$id]);if(!$o)throw new \InvalidArgumentException('Order not found.');if($o['discount_approval_status']!=='PENDING')throw new \InvalidArgumentException('This order has no discount pending approval.');$this->db->prepare("UPDATE orders SET discount_approval_status='APPROVED',discount_approved_by=?,discount_approved_at=NOW() WHERE id=?")->execute([$user['id'],$id]);$this->audit->order($id,$user['id'],'DISCOUNT_APPROVED',null,['discount_amount'=>$o['discount_amount']]);$this->db->commit();}catch(\Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}}
     public function rejectDiscount(int $id,string $reason,array $user):void{$this->db->beginTransaction();try{$o=$this->one('SELECT * FROM orders WHERE id=? FOR UPDATE',[$id]);if(!$o)throw new \InvalidArgumentException('Order not found.');if($o['discount_approval_status']!=='PENDING')throw new \InvalidArgumentException('This order has no discount pending approval.');$this->db->prepare('UPDATE discounts SET active=0 WHERE order_id=? AND active=1')->execute([$id]);$this->db->prepare('UPDATE item_discounts SET active=0 WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=?)')->execute([$id]);$this->db->prepare('UPDATE order_items SET net_amount=net_amount+discount_amount,discount_amount=0 WHERE order_id=?')->execute([$id]);$grand=(float)$o['subtotal']-(float)$o['complementary_amount'];$this->db->prepare("UPDATE orders SET discount_amount=0,grand_total=?,discount_approval_status='REJECTED',discount_approved_by=?,discount_approved_at=NOW() WHERE id=?")->execute([max(0,$grand),$user['id'],$id]);$this->audit->order($id,$user['id'],'DISCOUNT_REJECTED',['discount_amount'=>$o['discount_amount']],null,$reason);$this->db->commit();}catch(\Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}}
     private array $settingsCache=[];

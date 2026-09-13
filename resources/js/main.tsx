@@ -48,9 +48,19 @@ function startButtonLoading(btn:HTMLButtonElement|null|undefined,labelOverride?:
   const label=labelOverride||toLoadingLabel(text);
   const width=btn.getBoundingClientRect().width;
   if(width)btn.style.minWidth=width+'px';
-  btn.disabled=true;
   btn.setAttribute('data-loading','1');
   if(text.trim())btn.innerHTML=`<span class="btn-spinner"></span>${label}...`;
+  // Disabling the submitter is deferred a tick: some of this app's forms
+  // have multiple submit buttons whose own name/value the server depends
+  // on (e.g. Pay cash / Pay UPI, both name="method"). Browsers decide
+  // which control's value to include in the submission by reading its
+  // disabled state as part of the same synchronous submit algorithm that
+  // follows this event — disabling it here would make that value vanish
+  // from the POST body before it's ever sent. A 0ms defer runs after that
+  // data is already collected, so it still blocks a human double-click
+  // (imperceptibly fast) without corrupting the very submission it's
+  // reacting to.
+  setTimeout(()=>{if(btn.getAttribute('data-loading')==='1')btn.disabled=true},0);
   setTimeout(()=>{
     if(btn.isConnected&&btn.getAttribute('data-loading')==='1'){btn.disabled=false;btn.style.minWidth='';btn.removeAttribute('data-loading')}
   },20000);
@@ -468,7 +478,7 @@ function OrderEditor({order,menu,variants,initial,settings}:any){
     {order.status==='OPEN'&&(pending?<p className="muted">Payment is blocked while a discount is pending approval.</p>:<Form className="pay-form"><input type="hidden" name="action" value="order_pay"/><input type="hidden" name="order_id" value={order.id}/>{String(settings.payment_methods||'CASH,UPI').split(',').filter(Boolean).map((m:string)=><button className="primary" name="method" value={m} key={m}>Pay {m==='CASH'?'cash':m==='UPI'?'UPI':m.charAt(0)+m.slice(1).toLowerCase()}</button>)}</Form>)}
     {hasPermission('cancel_orders')&&settingOn('allow_order_cancellation')&&<details className="cancel"><summary>Cancel this bill</summary><Form onSubmit={(e:any)=>{if(settingOn('confirm_cancel_bill')&&!confirm('Cancel this bill? This will be recorded in cancelled bills history.'))e.preventDefault()}}><input type="hidden" name="action" value="order_cancel"/><input type="hidden" name="order_id" value={order.id}/><input name="reason" required={settingOn('require_cancellation_reason')} placeholder="Cancellation reason"/><button className="danger">Cancel bill</button></Form></details>}
   </aside>
-  <div className="print-bill"><div className="bill-head">{settingOn('show_logo_on_bill')&&settings.logo_path&&<img className="bill-logo" src={logoSrc(settings.logo_path)} alt=""/>}<h2>{settings.canteen_name||'Canteen'}</h2>{settings.address&&<p>{settings.address}</p>}{settings.phone&&<p>Ph: {settings.phone}</p>}{settings.gst_number&&<p>GSTIN: {settings.gst_number}</p>}</div><div className="bill-meta"><div><span>Bill No</span><b>{order.order_number}</b></div>{settingOn('show_table_number')&&<div><span>Table</span><b>{order.table_name}</b></div>}<div><span>Date</span><b>{new Date().toLocaleString()}</b></div>{settingOn('show_waiter_name')&&<div><span>Served by</span><b>{order.created_by_name}</b></div>}</div><div className="bill-table">
+  <div className="print-bill"><div className="bill-head">{settingOn('show_logo_on_bill')&&settings.logo_path&&<img className="bill-logo" src={logoSrc(settings.logo_path)} alt=""/>}<h2>{settings.canteen_name||'Canteen'}</h2>{settings.address&&<p>{settings.address}</p>}{settings.phone&&<p>Ph: {settings.phone}</p>}{settings.gst_number&&<p>GSTIN: {settings.gst_number}</p>}</div><div className="bill-meta"><div><span>Bill No</span><b>{order.bill_number||order.order_number}</b></div>{settingOn('show_table_number')&&<div><span>Table</span><b>{order.table_name}</b></div>}<div><span>Date</span><b>{new Date().toLocaleString()}</b></div>{settingOn('show_waiter_name')&&<div><span>Served by</span><b>{order.created_by_name}</b></div>}</div><div className="bill-table">
             <div className="bill-row bill-table-head"><span>Item</span><span>Qty</span><span>Rate</span><span>Amount</span></div>
             {items.map((x:any,i:number)=>{const gross=Number(x.unit_price)*Number(x.quantity);const lineDiscount=itemDiscountAmount(x,gross);return <div className="bill-row" key={i}>
               <span>{x.item_name_snapshot}{x.variant_name_snapshot?` (${x.variant_name_snapshot})`:''}{x.complementary?' - Complementary':''}</span>

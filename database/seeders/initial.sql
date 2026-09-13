@@ -11,6 +11,8 @@ INSERT INTO settings(setting_key,setting_value) VALUES ('canteen_name','Niyati C
  ('order_number_format','ORD-{seq}'),('order_number_auto','1'),('allow_order_cancellation','1'),('require_cancellation_reason','1'),('auto_free_table_after_completion','1'),
  ('bill_number_format','BILL-{seq}'),('bill_number_auto','1'),('payment_methods','CASH,UPI'),('show_logo_on_bill','1'),('show_waiter_name','1'),('show_table_number','1'),('show_thank_you_message','1'),('thank_you_message','Thank you for visiting Niyati Canteen!'),
  ('default_order_status','DRAFT'),('default_table_status','AVAILABLE'),('confirm_cancel_order','1'),('confirm_cancel_bill','1'),('confirm_disable_user','1');
+INSERT INTO bill_sequence(id,next_number) VALUES (1,101);
+INSERT INTO order_sequence(id,next_number) VALUES (1,101);
 INSERT INTO permissions(code,name,sort_order) VALUES
  ('dashboard','Dashboard',10),('menu','Menu Management',20),('categories','Category Management',30),('users','User Management',40),('reports','Reports',50),
  ('cancel_orders','Cancel Orders / Bills',80),('cancelled','Cancelled Bills History',90),
