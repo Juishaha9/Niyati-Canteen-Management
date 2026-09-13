@@ -1,6 +1,6 @@
 // The dynamic page payload is server-shaped; runtime validation remains authoritative in PHP.
 // @ts-nocheck
-import React,{useMemo,useState,useEffect,useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {LayoutDashboard,Table2,Package,ClipboardList,ReceiptText,Utensils,Tags,Users,BarChart3,Percent,Gift,History,Settings,LogOut,Plus,Minus,Search,Printer,IndianRupee,ChevronRight,ChevronDown,Menu as MenuIcon,TrendingUp,XCircle,Pencil,X,Trash2,CheckCircle2,Clock,RotateCcw,Wallet,Smartphone,Coffee,Sunrise,Soup,UtensilsCrossed,Salad,GlassWater,ChefHat,Star,Sandwich,MoreVertical,Eye,Info,ShieldCheck,RefreshCw,AlertTriangle,User,KeyRound,Camera,Maximize2,Minimize2,Download} from 'lucide-react'; import '../css/app.css'; import type {Boot,AnyRecord} from './types';
+import React,{useMemo,useState,useEffect,useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {LayoutDashboard,Table2,Package,ClipboardList,ReceiptText,Utensils,Tags,Users,BarChart3,Percent,Gift,History,Settings,LogOut,Plus,Minus,Search,Printer,IndianRupee,ChevronRight,ChevronDown,Menu as MenuIcon,TrendingUp,XCircle,Pencil,X,Trash2,CheckCircle2,Clock,RotateCcw,Wallet,Smartphone,Coffee,Sunrise,Soup,UtensilsCrossed,Salad,GlassWater,ChefHat,Star,Sandwich,MoreVertical,Eye,EyeOff,Info,ShieldCheck,RefreshCw,AlertTriangle,User,KeyRound,Camera,Maximize2,Minimize2,Download} from 'lucide-react'; import '../css/app.css'; import type {Boot,AnyRecord} from './types';
 declare global{interface Window{__CANTEEN__:Boot}} const boot=window.__CANTEEN__; const money=(v:any)=>'₹'+Number(v||0).toFixed(2); const Form=({children,method='post',...p}:any)=><form method={method} {...p}>{method==='post'&&<input type="hidden" name="_csrf" value={boot.csrf}/>} {children}</form>; const toggleSidebar=()=>document.querySelector('.sidebar')?.classList.toggle('collapsed');
 const settingOn=(k:string,def=true)=>{const v=(boot.data as any)?.settings?.[k];return v===undefined?def:v==='1'};
 
@@ -356,22 +356,80 @@ function AccountMenu(){
     {pwOpen&&<ChangePasswordModal onClose={()=>setPwOpen(false)}/>}
   </div>;
 }
+// Shared by all three Change Password fields: hidden by default, its own
+// independent show/hide toggle (each instance owns its own `visible`
+// state, so toggling one never affects the others), and a fixed-position
+// eye button that never shifts the field's own width/layout.
+function PasswordField({label,name,value,onChange,ariaBase,hint,autoFocus,autoComplete}:any){
+  const [visible,setVisible]=useState(false);
+  return <label className={name==='current_password'?'wide':'pw-field'}>
+    {label}
+    <span className="pw-input">
+      <input name={name} type={visible?'text':'password'} required autoFocus={autoFocus} autoComplete={autoComplete} value={value} onChange={onChange}/>
+      <button type="button" className="pw-input-toggle" onClick={()=>setVisible(v=>!v)} aria-label={(visible?'Hide ':'Show ')+ariaBase} title={(visible?'Hide ':'Show ')+ariaBase}>
+        {visible?<EyeOff size={17}/>:<Eye size={17}/>}
+      </button>
+    </span>
+    {hint&&<small className="current-image-hint">{hint}</small>}
+  </label>;
+}
 function ChangePasswordModal({onClose}:any){
   useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);
+  const [currentPassword,setCurrentPassword]=useState('');
   const [newPassword,setNewPassword]=useState(''); const [confirmPassword,setConfirmPassword]=useState('');
+  const [error,setError]=useState<string|null>(null);
+  const [submitting,setSubmitting]=useState(false);
+  // This form is handled entirely here rather than through the app's
+  // generic client-navigation submit listener: that generic path applies a
+  // server error to the whole page's flash banner (behind this modal, per
+  // Shell), which is exactly the bug being fixed — Change Password errors
+  // must stay inside the modal that caused them. e.preventDefault() here
+  // stops the event before it ever reaches that document-level listener,
+  // and this does its own fetch to the same server action (unchanged
+  // validation/hashing/CSRF), branching on the result itself instead of
+  // letting the generic handler decide what happens next.
+  const submit=async(e:any)=>{
+    e.preventDefault();
+    if(submitting)return;
+    if(!currentPassword){setError('Current password is required.');return;}
+    if(newPassword.length<8){setError('New password must be at least 8 characters.');return;}
+    if(newPassword!==confirmPassword){setError('New password and confirm password do not match.');return;}
+    setError(null); setSubmitting(true);
+    try{
+      const fd=new FormData();
+      fd.set('_csrf',boot.csrf); fd.set('action','change_password');
+      fd.set('current_password',currentPassword); fd.set('new_password',newPassword); fd.set('confirm_password',confirmPassword);
+      const res=await fetch(location.pathname+location.search,{method:'POST',credentials:'same-origin',body:fd});
+      const html=await res.text();
+      const m=html.match(/window\.__CANTEEN__=(\{[\s\S]*?\});<\/script>/);
+      if(!m){location.href=res.url||location.href;return;}
+      const newBoot=JSON.parse(m[1]);
+      if(newBoot.flash&&newBoot.flash.error){
+        setError(newBoot.flash.error);
+        setCurrentPassword(''); // never keep a rejected current-password value around
+        setSubmitting(false);
+        return;
+      }
+      Object.assign(boot,newBoot); notifyBootChanged&&notifyBootChanged();
+      onClose();
+    }catch{
+      setError('Could not change the password. Check your connection and try again.');
+      setSubmitting(false);
+    }
+  };
   return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}>
     <div className="modal-panel">
       <div className="modal-head"><h2>Change password</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div>
-      <Form onSubmit={(e:any)=>{if(newPassword!==confirmPassword){alert('New password and confirm password do not match.');e.preventDefault()}}}>
-        <input type="hidden" name="action" value="change_password"/>
+      {error&&<div className="alert error">{error}</div>}
+      <Form onSubmit={submit}>
         <div className="form-grid">
-          <label className="wide">Current password<input name="current_password" type="password" required autoFocus/></label>
-          <label className="pw-field">New password<input name="new_password" type="password" minLength={8} required value={newPassword} onChange={e=>setNewPassword(e.target.value)}/><small className="current-image-hint">At least 8 characters.</small></label>
-          <label className="pw-field">Confirm new password<input name="confirm_password" type="password" minLength={8} required value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)}/></label>
+          <PasswordField label="Current password" name="current_password" value={currentPassword} onChange={(e:any)=>setCurrentPassword(e.target.value)} ariaBase="current password" autoFocus autoComplete="current-password"/>
+          <PasswordField label="New password" name="new_password" value={newPassword} onChange={(e:any)=>setNewPassword(e.target.value)} ariaBase="new password" hint="At least 8 characters." autoComplete="new-password"/>
+          <PasswordField label="Confirm new password" name="confirm_password" value={confirmPassword} onChange={(e:any)=>setConfirmPassword(e.target.value)} ariaBase="confirm password" autoComplete="new-password"/>
         </div>
         <div className="form-actions">
-          <button className="primary">Change password</button>
-          <button type="button" className="secondary" onClick={onClose}>Cancel</button>
+          <button className="primary" disabled={submitting}>{submitting?<><span className="btn-spinner"></span>Changing password...</>:'Change password'}</button>
+          <button type="button" className="secondary" onClick={onClose} disabled={submitting}>Cancel</button>
         </div>
       </Form>
     </div>

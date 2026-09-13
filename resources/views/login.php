@@ -43,10 +43,10 @@ $successMsg = View::flash('success');
           <input type="hidden" name="action" value="login">
           <input type="hidden" name="_csrf" value="<?=Csrf::token()?>">
           <label class="field">
-            <span>Email</span>
+            <span>Email, Mobile number or Full name</span>
             <span class="field-input">
               <svg class="field-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z" opacity="0"/><path d="M22 6 12 13 2 6"/><path d="M2 6h20v12H2z"/></svg>
-              <input type="email" name="email" autocomplete="email" placeholder="you@example.com" required autofocus>
+              <input type="text" name="email" autocomplete="username" placeholder="Email, Mobile number or Full name" required autofocus>
             </span>
           </label>
           <label class="field">
