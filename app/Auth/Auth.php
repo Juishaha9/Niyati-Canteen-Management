@@ -26,7 +26,7 @@ final class Auth {
         if (count($rows) !== 1) return false;
         $user = $rows[0];
         if (!password_verify($password, $user['password_hash'])) return false;
-        session_regenerate_id(true); $_SESSION['user'] = ['id'=>(int)$user['id'],'name'=>$user['display_name'],'email'=>$user['email'],'role'=>$user['role'],'mobile'=>$user['mobile'],'avatar'=>$user['avatar_path']]; $_SESSION['last_activity'] = time();
+        session_regenerate_id(true); $_SESSION['user'] = ['id'=>(int)$user['id'],'name'=>$user['display_name'],'email'=>$user['email'],'role'=>$user['role'],'mobile'=>$user['mobile'],'avatar'=>$user['avatar_path']];
         $db->prepare('UPDATE users SET last_login_at=NOW() WHERE id=?')->execute([$user['id']]); return true;
     }
     public static function user(): ?array { return $_SESSION['user'] ?? null; }

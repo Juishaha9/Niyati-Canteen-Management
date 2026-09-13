@@ -3,5 +3,6 @@ return [
     'name' => 'Niyati Canteen',
     'url' => getenv('APP_URL') ?: 'http://localhost:8080',
     'timezone' => getenv('APP_TIMEZONE') ?: 'Asia/Kolkata',
-    'session_timeout' => (int) (getenv('SESSION_TIMEOUT') ?: 28800),
+    // No inactivity-based session_timeout: every login is persistent by
+    // design until the user explicitly logs out (see public/index.php).
 ];
