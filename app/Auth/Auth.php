@@ -17,12 +17,10 @@ final class Auth {
     public static function permissions(PDO $db): array { if (!self::check()) return []; if (self::can('ADMIN')) return array_column($db->query('SELECT code FROM permissions')->fetchAll(), 'code'); $stmt=$db->prepare('SELECT permission_code FROM user_permissions WHERE user_id=?'); $stmt->execute([self::user()['id']]); return array_column($stmt->fetchAll(), 'permission_code'); }
     public static function allowed(PDO $db, string $permission): bool { if (self::can('ADMIN')) return true; return in_array($permission, self::permissions($db), true); }
     public static function logout(): void { $_SESSION=[]; if (ini_get('session.use_cookies')) { $p=session_get_cookie_params(); setcookie(session_name(), '', time()-42000, $p['path'],$p['domain'],$p['secure'],$p['httponly']); } session_destroy(); }
-
-    public static function resetPassword(PDO $db, string $email, string $newPassword): bool {
-        $stmt = $db->prepare('SELECT id FROM users WHERE email=? AND active=1 LIMIT 1');
-        $stmt->execute([$email]); $user = $stmt->fetch();
-        if (!$user) return false;
-        $db->prepare('UPDATE users SET password_hash=? WHERE id=?')->execute([password_hash($newPassword, PASSWORD_DEFAULT), $user['id']]);
-        return true;
-    }
+    // resetPassword() (email-only public password reset) was removed — an
+    // internal system must never let an unauthenticated visitor overwrite a
+    // password from just an email address. Authenticated self-service
+    // password change (action=change_password in routes/web.php, requires
+    // the current password) and the admin-only user_reset_password action
+    // are unrelated and unaffected.
 }

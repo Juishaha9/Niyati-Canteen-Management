@@ -754,11 +754,7 @@ tbody tr:hover{background:var(--bg)}
 .login-panel-view .eyebrow{color:var(--lp-blue);font-weight:800;font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
 .login-panel-view h1{font-size:26px;margin:0 0 4px;font-weight:800;letter-spacing:-.02em;color:#0f172a}
 .login-panel-view .muted{color:var(--text-muted);font-size:14px;margin-bottom:14px}
-.login-panel-view.panel-enter{animation:panel-in .4s cubic-bezier(.22,1,.36,1)}
 @keyframes panel-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-
-.back-btn{border:0;background:var(--lp-blue-soft);color:var(--lp-blue);width:34px;height:34px;border-radius:10px;display:grid;place-items:center;margin-bottom:14px;transition:background .15s,transform .15s}
-.back-btn:hover{background:#dce9ff;transform:translateX(-2px)}
 
 .login-form{display:grid;grid-template-columns:minmax(0,1fr);gap:13px;margin-top:6px}
 .field{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;font-weight:700;font-size:13px;color:var(--text-soft);min-width:0}
@@ -777,9 +773,6 @@ tbody tr:hover{background:var(--bg)}
 .login-submit.is-loading{color:transparent;pointer-events:none}
 .login-submit.is-loading::after{content:"";position:absolute;inset:0;margin:auto;width:18px;height:18px;border-radius:50%;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-
-.link-btn{border:0;background:transparent;color:var(--lp-blue);font-weight:700;font-size:13.5px;justify-self:center;padding:4px;transition:opacity .15s}
-.link-btn:hover{opacity:.72;text-decoration:underline}
 
 .login-illustration{display:flex;justify-content:center;margin-bottom:8px}
 .login-illustration svg{width:168px;height:168px;max-width:100%}
