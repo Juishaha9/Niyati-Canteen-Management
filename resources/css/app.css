@@ -73,7 +73,7 @@ h1,h2,h3,p{margin:0}
 .logout:hover{background:var(--danger-soft);color:#b91c1c}
 .sidebar-backdrop{display:none}
 
-.main{width:calc(100% - 262px);margin-left:262px;padding:24px 28px 32px;max-width:1680px;background:var(--bg);min-height:100vh}
+.main{width:calc(100% - 262px);margin-left:262px;padding:24px 28px 32px;max-width:1680px;background:var(--bg);min-height:100vh;position:relative}
 .sidebar.collapsed~.main{width:calc(100% - 76px);margin-left:76px}
 
 .topbar{height:var(--header-h);box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;background:var(--surface);margin:-24px -28px 24px;padding:0 28px;border-radius:0;border:0;border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm)}
@@ -441,6 +441,29 @@ tbody tr:hover{background:var(--bg)}
 .secondary:hover{background:#e0e3ff}
 .danger{background:var(--danger-soft);color:#b91c1c}
 .danger:hover{background:#fecaca}
+.primary:disabled,.secondary:disabled,.danger:disabled{opacity:.75;cursor:not-allowed}
+.primary:hover:disabled{background:linear-gradient(135deg,var(--primary),#6d7cff)}
+.secondary:hover:disabled{background:var(--primary-soft)}
+.danger:hover:disabled{background:var(--danger-soft)}
+/* System-wide processing indicator: a small spinner swapped into a
+   button's own label (Save/Add/Delete/...) the instant it starts working,
+   so every async/navigating action gets the same immediate feedback
+   without a bespoke loading UI per button. */
+.btn-spinner{width:14px;height:14px;border-radius:50%;display:inline-block;flex-shrink:0;vertical-align:-2px;animation:btn-spin .6s linear infinite;margin-right:2px}
+.primary .btn-spinner{border:2px solid rgba(255,255,255,.4);border-top-color:#fff}
+.secondary .btn-spinner{border:2px solid rgba(75,95,238,.3);border-top-color:var(--primary-dark)}
+.danger .btn-spinner{border:2px solid rgba(185,28,28,.3);border-top-color:#b91c1c}
+.icon .btn-spinner,.logout .btn-spinner{border:2px solid rgba(75,95,238,.3);border-top-color:var(--primary-dark)}
+@keyframes btn-spin{to{transform:rotate(360deg)}}
+/* Module/page navigation feedback: the app shell (sidebar, topbar) is left
+   completely untouched — only the main content area shows a centered
+   spinner, immediately on click, for the brief moment before the browser
+   swaps in the next page (this app has no client-side router, so a real
+   navigation is what actually completes the transition; this overlay is
+   simply what's visible on the outgoing page in that instant). */
+.main-loading-overlay{position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:5}
+.main-loading-spinner{width:34px;height:34px;border-radius:50%;border:3px solid var(--primary-soft);border-top-color:var(--primary);animation:btn-spin .7s linear infinite}
+.main-loading-overlay span:last-child{color:var(--text-muted);font-weight:600;font-size:13px}
 
 .form-panel{margin-top:24px}
 .form-panel .form-actions{margin-top:18px}

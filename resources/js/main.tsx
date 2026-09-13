@@ -1,8 +1,97 @@
 // The dynamic page payload is server-shaped; runtime validation remains authoritative in PHP.
 // @ts-nocheck
 import React,{useMemo,useState,useEffect,useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {LayoutDashboard,Table2,Package,ClipboardList,ReceiptText,Utensils,Tags,Users,BarChart3,Percent,Gift,History,Settings,LogOut,Plus,Minus,Search,Printer,IndianRupee,ChevronRight,ChevronDown,Menu as MenuIcon,TrendingUp,XCircle,Pencil,X,Trash2,CheckCircle2,Clock,RotateCcw,Wallet,Smartphone,Coffee,Sunrise,Soup,UtensilsCrossed,Salad,GlassWater,ChefHat,Star,Sandwich,MoreVertical,Eye,Info,ShieldCheck,RefreshCw,AlertTriangle,User,KeyRound,Camera} from 'lucide-react'; import '../css/app.css'; import type {Boot,AnyRecord} from './types';
-declare global{interface Window{__CANTEEN__:Boot}} const boot=window.__CANTEEN__; const money=(v:any)=>'₹'+Number(v||0).toFixed(2); const go=(p:string)=>location.href='/'+p; const Form=({children,method='post',...p}:any)=><form method={method} {...p}>{method==='post'&&<input type="hidden" name="_csrf" value={boot.csrf}/>} {children}</form>; const toggleSidebar=()=>document.querySelector('.sidebar')?.classList.toggle('collapsed');
+declare global{interface Window{__CANTEEN__:Boot}} const boot=window.__CANTEEN__; const money=(v:any)=>'₹'+Number(v||0).toFixed(2); const go=(p:string)=>{showMainLoading();location.href='/'+p}; const Form=({children,method='post',...p}:any)=><form method={method} {...p}>{method==='post'&&<input type="hidden" name="_csrf" value={boot.csrf}/>} {children}</form>; const toggleSidebar=()=>document.querySelector('.sidebar')?.classList.toggle('collapsed');
 const settingOn=(k:string,def=true)=>{const v=(boot.data as any)?.settings?.[k];return v===undefined?def:v==='1'};
+
+// ===== System-wide loading/processing UX layer =====
+// This app has no client-side router or fetch-driven data loading — every
+// module switch is a real browser navigation and every Save/Add/Delete is a
+// native form POST-redirect-GET. So "loading UX" here means: (1) an
+// in-content loading state for module navigation (the app shell/sidebar
+// stays exactly as-is; only the main content area shows a centered
+// spinner, since a top-of-page progress bar was explicitly rejected), and
+// (2) a generic per-button processing state applied via one delegated
+// 'submit' listener, so every existing form's submit button gets
+// consistent feedback with zero changes to each individual component.
+function showMainLoading(){
+  if(typeof document==='undefined')return;
+  const main=document.querySelector('.main'); if(!main||main.querySelector('.main-loading-overlay'))return;
+  const overlay=document.createElement('div');
+  overlay.className='main-loading-overlay';
+  overlay.innerHTML='<span class="main-loading-spinner"></span><span>Loading...</span>';
+  main.appendChild(overlay);
+}
+// Button label -> present-participle ("Save" -> "Saving"), covering every
+// verb actually used across the app's buttons; anything unlisted falls back
+// to a generic e/consonant-aware "+ing" guess rather than being left blank.
+const LOADING_VERB_MAP:Record<string,string>={save:'Saving',add:'Adding',update:'Updating',delete:'Deleting',create:'Creating',change:'Changing',reset:'Resetting',cancel:'Cancelling',reject:'Rejecting',approve:'Approving',pay:'Paying',enable:'Enabling',disable:'Disabling',print:'Printing',export:'Exporting',apply:'Applying',logout:'Logging out'};
+function toLoadingLabel(text:string):string{
+  const trimmed=text.replace(/\s+/g,' ').trim(); if(!trimmed)return 'Processing';
+  const sp=trimmed.indexOf(' '); const firstWord=(sp===-1?trimmed:trimmed.slice(0,sp)).toLowerCase().replace(/[^a-z]/g,'');
+  const rest=sp===-1?'':trimmed.slice(sp+1);
+  const gerund=LOADING_VERB_MAP[firstWord];
+  if(gerund)return rest?`${gerund} ${rest}`:gerund;
+  const guess=/e$/i.test(firstWord)?firstWord.slice(0,-1)+'ing':firstWord+'ing';
+  return rest?`${guess.charAt(0).toUpperCase()+guess.slice(1)} ${rest}`:guess.charAt(0).toUpperCase()+guess.slice(1);
+}
+// Disables a button, swaps its label for a spinner + present-participle
+// ("Save order" -> "⟳ Saving order..."), and locks its rendered width so
+// the longer label can't shift surrounding layout. A 20s safety timeout
+// re-enables it if the page never actually navigates (e.g. a dropped
+// connection) — this app's only "restore on success" path is the browser
+// reloading to the new page state, which resets everything for free; this
+// timeout exists purely so a genuine failure never leaves a button stuck.
+function startButtonLoading(btn:HTMLButtonElement|null|undefined,labelOverride?:string){
+  if(!btn||btn.disabled||btn.getAttribute('data-loading')==='1')return;
+  const text=btn.textContent||'';
+  const label=labelOverride||toLoadingLabel(text);
+  const width=btn.getBoundingClientRect().width;
+  if(width)btn.style.minWidth=width+'px';
+  btn.disabled=true;
+  btn.setAttribute('data-loading','1');
+  if(text.trim())btn.innerHTML=`<span class="btn-spinner"></span>${label}...`;
+  setTimeout(()=>{
+    if(btn.isConnected&&btn.getAttribute('data-loading')==='1'){btn.disabled=false;btn.style.minWidth='';btn.removeAttribute('data-loading')}
+  },20000);
+}
+if(typeof document!=='undefined'){
+  // Same-origin link navigation (sidebar clicks already go through go()
+  // above) — e.g. "View Cancelled Bills", an order row link — gets the
+  // same content-area loading state as any other module switch.
+  document.addEventListener('click',(e:MouseEvent)=>{
+    if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+    const a=(e.target as HTMLElement)?.closest?.('a[href]') as HTMLAnchorElement|null;
+    if(!a||a.target==='_blank'||a.hasAttribute('download'))return;
+    try{if(new URL(a.href,location.href).origin!==location.origin)return}catch{return}
+    showMainLoading();
+  });
+  // Form submits get button-level feedback only (below) — not the
+  // content-area overlay too, so the two indicators never compete.
+  document.addEventListener('submit',(e:any)=>{
+    if(e.defaultPrevented)return; // a component's own validation already blocked this submit
+    const submitter=e.submitter as HTMLButtonElement|undefined;
+    if(submitter&&submitter.tagName==='BUTTON')startButtonLoading(submitter);
+  });
+}
+// Reusable pattern for the handful of client-only actions that aren't a
+// form submit (Export/Print) — idle -> loading -> idle, with a minimum
+// display time so a fast operation doesn't just flash the spinner.
+function AsyncButton({onAction,loadingText,minMs=350,className,children,...rest}:any){
+  const [running,setRunning]=useState(false);
+  const handleClick=async(e:any)=>{
+    if(running)return;
+    setRunning(true);
+    const started=Date.now();
+    try{await onAction(e)}finally{
+      const wait=Math.max(0,minMs-(Date.now()-started));
+      setTimeout(()=>setRunning(false),wait);
+    }
+  };
+  return <button type="button" className={className} onClick={handleClick} disabled={running} {...rest}>
+    {running?(loadingText?<><span className="btn-spinner"/>{loadingText}...</>:<span className="btn-spinner"/>):children}
+  </button>;
+}
 const applyThermalPageSize=()=>{
   // Chrome doesn't reliably size a print page from `@page{size:80mm auto}`,
   // so measure the receipt's real rendered height and inject an exact
@@ -294,7 +383,7 @@ function Dashboard(){
   </Shell>;
 }
 function Tables(){const isParcel=boot.page==='parcels';const kind=isParcel?'Parcel':'Table';const Icon=isParcel?Package:Table2;const tables=boot.data.tables||[];const [editing,setEditing]=useState<any>(null);const [showModal,setShowModal]=useState(false);const isAdmin=boot.user.role==='ADMIN';const startFormRefs=useRef<Record<number,HTMLFormElement|null>>({});const openAdd=()=>{setEditing(null);setShowModal(true)};const startEdit=(t:any,e:any)=>{e.stopPropagation();setEditing(t);setShowModal(true)};const occupiedCount=tables.filter((t:any)=>t.status!=='AVAILABLE').length;const availableCount=tables.length-occupiedCount;return <Shell><div className="section-head"><h2 className="page-heading">{kind.toUpperCase()}S</h2>{isAdmin&&<button type="button" className="primary tables-add-btn" onClick={openAdd}><Plus size={16}/> Add {kind}</button>}</div>{!isParcel&&<section className="table-widgets"><article className="table-widget widget-available"><div><small>Available {kind}s</small><strong>{availableCount}</strong></div><span className="widget-icon"><CheckCircle2/></span></article><article className="table-widget widget-occupied"><div><small>Occupied {kind}s</small><strong>{occupiedCount}</strong></div><span className="widget-icon"><Users/></span></article></section>}<div className="table-grid">{tables.map((t:any)=><article className={'table-card '+t.status.toLowerCase()} key={t.id} onClick={(e:any)=>{if((e.target as HTMLElement).closest('button,a,input'))return;if(t.order_id)location.href='/order?id='+t.order_id;else startFormRefs.current[t.id]?.requestSubmit()}}><div className="table-card-body"><div className="table-card-top"><span className="table-card-icon"><Icon size={17}/></span>{!isParcel&&<small>{t.status}</small>}{isAdmin&&<div className="table-card-actions"><button type="button" className="menu-card-icon-btn" title={`Edit ${kind.toLowerCase()}`} onClick={(e:any)=>startEdit(t,e)}><Pencil size={14}/></button></div>}</div><h2>{t.table_name}</h2>{t.order_id&&<b>{money(t.grand_total)}</b>}</div>{!t.order_id&&<form ref={(el:any)=>{startFormRefs.current[t.id]=el}} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="order_create"/><input type="hidden" name="table_id" value={t.id}/></form>}</article>)}</div>{showModal&&<TableModal kind={kind} editing={editing} onClose={()=>setShowModal(false)}/>}</Shell>}
-function TableModal({kind,editing,onClose}:any){useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);const deleteFormRef=useRef<HTMLFormElement>(null);const onDelete=()=>{if(confirm(`Delete "${editing.table_name}"? This cannot be undone.`))deleteFormRef.current?.requestSubmit()};return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}><div className="modal-panel"><div className="modal-head"><h2>{editing?`Edit ${kind.toLowerCase()}`:`Add ${kind.toLowerCase()}`}</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div>{editing&&<form ref={deleteFormRef} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="table_delete"/><input type="hidden" name="id" value={editing.id}/></form>}<Form key={editing?.id||'new'}><input type="hidden" name="action" value="table_save"/><input type="hidden" name="id" value={editing?.id||0}/><input type="hidden" name="kind" value={kind.toUpperCase()}/><div className="form-grid"><label>{kind} name<input name="table_name" required autoFocus defaultValue={editing?.table_name||''}/></label><label>Display order<input name="sort_order" type="number" defaultValue={editing?.sort_order??0}/></label><label className="check"><input type="checkbox" name="active" defaultChecked={editing?Number(editing.active)===1:true}/>Active</label></div><div className="form-actions"><button className="primary">{editing?`Update ${kind.toLowerCase()}`:`Save ${kind.toLowerCase()}`}</button><button type="button" className="secondary" onClick={onClose}>Cancel</button>{editing&&<button type="button" className="danger" onClick={onDelete}><Trash2 size={14}/> Delete {kind.toLowerCase()}</button>}</div></Form></div></div>}
+function TableModal({kind,editing,onClose}:any){useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);const deleteFormRef=useRef<HTMLFormElement>(null);const onDelete=(e:any)=>{if(confirm(`Delete "${editing.table_name}"? This cannot be undone.`)){startButtonLoading(e.currentTarget,'Deleting');deleteFormRef.current?.requestSubmit()}};return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}><div className="modal-panel"><div className="modal-head"><h2>{editing?`Edit ${kind.toLowerCase()}`:`Add ${kind.toLowerCase()}`}</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div>{editing&&<form ref={deleteFormRef} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="table_delete"/><input type="hidden" name="id" value={editing.id}/></form>}<Form key={editing?.id||'new'}><input type="hidden" name="action" value="table_save"/><input type="hidden" name="id" value={editing?.id||0}/><input type="hidden" name="kind" value={kind.toUpperCase()}/><div className="form-grid"><label>{kind} name<input name="table_name" required autoFocus defaultValue={editing?.table_name||''}/></label><label>Display order<input name="sort_order" type="number" defaultValue={editing?.sort_order??0}/></label><label className="check"><input type="checkbox" name="active" defaultChecked={editing?Number(editing.active)===1:true}/>Active</label></div><div className="form-actions"><button className="primary">{editing?`Update ${kind.toLowerCase()}`:`Save ${kind.toLowerCase()}`}</button><button type="button" className="secondary" onClick={onClose}>Cancel</button>{editing&&<button type="button" className="danger" onClick={onDelete}><Trash2 size={14}/> Delete {kind.toLowerCase()}</button>}</div></Form></div></div>}
 function Order(){const d=boot.data;if(d.missing)return <Shell><div className="surface">Order not found.</div></Shell>;return <Shell><OrderEditor order={d.order} menu={d.menu||[]} variants={d.variants||[]} initial={d.items||[]} settings={d.settings||{}}/></Shell>}
 function OrderEditor({order,menu,variants,initial,settings}:any){
   const [items,setItems]=useState(initial.map((x:any)=>({...x,menu_item_id:Number(x.menu_item_id),variant_id:x.menu_item_variant_id?Number(x.menu_item_variant_id):null,complementary:Number(x.complementary_amount)>0,discount_type:x.item_discount_type||'NONE',discount_value:x.item_discount_value||''})));
@@ -336,7 +425,7 @@ function OrderEditor({order,menu,variants,initial,settings}:any){
   const pending=order.discount_approval_status==='PENDING';
   return <div className="order-layout"><section className="menu-area"><div className="order-meta"><div><span>{order.table_name}</span><b>{order.order_number}</b></div><small>Opened {new Date(order.created_at).toLocaleString()} by {order.created_by_name}</small></div><div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search menu or category"/></div><div className="chips order-category-chips">{cats.map(c=><button className={c===category?'selected':''} onClick={()=>setCategory(c)} key={c}>{c}</button>)}</div><div className="menu-scroll"><div className="menu-grid">{filtered.map((m:any,i:number)=>{const vs=variants.filter((v:any)=>v.menu_item_id===m.id);return <article className="food-card" key={m.id} onClick={()=>!vs.length&&m.price!==null&&add(m)}><img loading={i<8?'eager':'lazy'} decoding="async" src={menuImageSrc(m)} alt=""/><div><h3>{m.name}</h3><small>{m.description||m.category_name}</small>{vs.length?<div className="variant-buttons">{vs.map((v:any)=><button type="button" onClick={e=>{e.stopPropagation();add(m,v)}} key={v.id}>{v.name} {money(v.price)}</button>)}</div>:<b>{m.price===null?'Configure price':money(m.price)}</b>}</div></article>})}</div></div></section>
   <aside className="cart">
-    <div className="cart-head"><div><small>Current order</small><h2>{items.length} item{items.length===1?'':'s'}</h2></div><button className="icon" title="Print bill" onClick={printThermalBill}><Printer size={19}/></button></div>
+    <div className="cart-head"><div><small>Current order</small><h2>{items.length} item{items.length===1?'':'s'}</h2></div><AsyncButton className="icon" title="Print bill" onAction={async()=>printThermalBill()}><Printer size={19}/></AsyncButton></div>
     {pending&&<div className="alert warning">This bill's discount is pending {isApprover?'your':'admin/manager'} approval and cannot be paid until it is resolved.
       {isApprover&&<div className="form-actions">
         <Form><input type="hidden" name="action" value="discount_approve"/><input type="hidden" name="order_id" value={order.id}/><button className="secondary" type="submit">Approve discount</button></Form>
@@ -849,7 +938,7 @@ function MenuModal({editing,categories,onClose}:any){
   // for the life of the page.
   useEffect(()=>{return()=>{if(preview)URL.revokeObjectURL(preview)}},[preview]);
   const deleteFormRef=useRef<HTMLFormElement>(null);
-  const onDelete=()=>{if(confirm(`Delete "${editing.name}"?\nThis action cannot be undone.`))deleteFormRef.current?.requestSubmit()};
+  const onDelete=(e:any)=>{if(confirm(`Delete "${editing.name}"?\nThis action cannot be undone.`)){startButtonLoading(e.currentTarget,'Deleting');deleteFormRef.current?.requestSubmit()}};
   return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}>
     <div className="modal-panel menu-modal">
       <div className="modal-head"><h2>{editing?`Edit "${editing.name}"`:'Add menu item'}</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div>
@@ -909,7 +998,7 @@ function CategoryCard({c,onEdit}:any){
   const formRef=useRef<HTMLFormElement>(null);
   const count=Number(c.item_count||0);
   const viewItems=()=>location.href='/menu?category='+c.id;
-  const onDelete=()=>{if(confirm(`Delete "${c.name}"? It will be hidden but existing menu history stays intact.`))formRef.current?.requestSubmit()};
+  const onDelete=(e:any)=>{if(confirm(`Delete "${c.name}"? It will be hidden but existing menu history stays intact.`)){startButtonLoading(e.currentTarget,'Deleting');formRef.current?.requestSubmit()}};
   return <article className={'category-card'+(c.active?'':' inactive')}>
     <form ref={formRef} method="post" className="category-delete-form"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="category_delete"/><input type="hidden" name="id" value={c.id}/></form>
     <div className="category-card-top">
@@ -1420,8 +1509,8 @@ function Reports(){
         <label className="reports-period">Report Period<select value={period} onChange={e=>goPeriod(e.target.value)}>{REPORT_PERIODS.map(([v,l])=><option value={v} key={v}>{l}</option>)}</select></label>
         {period==='custom'&&<Form method="get" className="reports-custom-range"><input type="hidden" name="page" value="reports"/><input type="hidden" name="period" value="custom"/><input type="date" name="from" defaultValue={d.from} required/><input type="date" name="to" defaultValue={d.to} required/><button className="secondary">Apply</button></Form>}
         <label className="reports-period">Report Section<select value={section} onChange={e=>changeSection(e.target.value)}><option value="all">All Reports</option>{REPORT_SECTIONS.map(([k,l])=><option value={k} key={k}>{l}</option>)}</select></label>
-        <button type="button" className="secondary reports-export-btn" onClick={()=>downloadReportCsv(d,section)}><ReceiptText size={16}/> Export Report</button>
-        <button type="button" className="secondary reports-print-btn" onClick={()=>window.print()}><Printer size={16}/> Print Report</button>
+        <AsyncButton className="secondary reports-export-btn" loadingText="Exporting" onAction={async()=>downloadReportCsv(d,section)}><ReceiptText size={16}/> Export Report</AsyncButton>
+        <AsyncButton className="secondary reports-print-btn" loadingText="Preparing" onAction={async()=>window.print()}><Printer size={16}/> Print Report</AsyncButton>
       </div>
     </div>
 
