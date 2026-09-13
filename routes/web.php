@@ -99,5 +99,13 @@ return function(PDO $db): void {
         header('Content-Type: application/json'); header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0'); header('Pragma: no-cache');
         echo json_encode((new App\Services\PageDataService($db))->data($page,Auth::user(),$request)); return;
     }
+    // no-store on every authenticated page response: without it, a browser
+    // may serve this exact document back out of its back/forward cache (or
+    // regular HTTP cache) on a Back/Forward navigation with no server round
+    // trip at all — including after logout, when the session backing it no
+    // longer exists. no-store makes every Back/Forward to an authenticated
+    // URL re-request it from the server, so a destroyed session is always
+    // re-checked and correctly bounced to the login view.
+    header('Cache-Control: no-store, no-cache, must-revalidate'); header('Pragma: no-cache');
     $data=(new App\Services\PageDataService($db))->data($page,Auth::user(),$request); $boot=['page'=>$page,'user'=>Auth::user()+['permissions'=>Auth::permissions($db)],'csrf'=>Csrf::token(),'data'=>$data,'flash'=>['success'=>View::flash('success'),'error'=>View::flash('error'),'payment_success'=>View::flash('payment_success')]]; require dirname(__DIR__).'/resources/views/app.php';
 };

@@ -140,6 +140,16 @@ if(boot&&typeof document!=='undefined'){
     const form=e.target as HTMLFormElement;
     const submitter=e.submitter as HTMLButtonElement|undefined;
     if(submitter&&submitter.tagName==='BUTTON')startButtonLoading(submitter);
+    // Logout is deliberately EXCLUDED from client-side navigation. Letting
+    // the browser perform its own real submit+redirect (rather than
+    // fetching it and swapping the module in place) guarantees an actual
+    // full document navigation to the login page — the session is
+    // destroyed server-side either way, but a real navigation also tears
+    // down the in-memory React app and its history-spanning pushState
+    // entries, which matters together with the no-store header on every
+    // authenticated response (see routes/web.php) for making sure Back
+    // after logout can't resurrect authenticated content from cache.
+    if((new FormData(form).get('action'))==='logout')return;
     e.preventDefault();
     const fd=new FormData(form,submitter);
     // form.action/form.method (the DOM properties) are NOT safe here: per

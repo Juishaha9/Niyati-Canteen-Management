@@ -69,7 +69,13 @@ h1,h2,h3,p{margin:0}
 .sidebar.collapsed nav button span{display:none}
 .sidebar.collapsed .logout{padding:11px;justify-content:center}
 .sidebar.collapsed .logout span{display:none}
-.logout{margin-top:auto;margin-bottom:14px;border:0;background:transparent;color:var(--text-muted);padding:11px 22px;display:flex;gap:12px;align-items:center;font:600 14.5px 'Inter',sans-serif;cursor:pointer;white-space:nowrap;overflow:hidden;border-radius:0}
+/* <button> keeps shrink-to-fit intrinsic sizing even as a flex/block
+   container — unlike the nav items above (real CSS Grid children, which
+   stretch to their column by default), this button sits inside a plain
+   <form> with no grid/flex context of its own, so it never inherited that
+   stretch. width:100% is what actually makes its background/hover area
+   reach the sidebar's edge instead of shrinking to the label's width. */
+.logout{width:100%;margin-top:auto;margin-bottom:14px;border:0;background:transparent;color:var(--text-muted);padding:11px 22px;display:flex;gap:12px;align-items:center;font:600 14.5px 'Inter',sans-serif;cursor:pointer;white-space:nowrap;overflow:hidden;border-radius:0}
 .logout:hover{background:var(--danger-soft);color:#b91c1c}
 .sidebar-backdrop{display:none}
 
