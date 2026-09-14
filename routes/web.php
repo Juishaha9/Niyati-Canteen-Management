@@ -3,6 +3,21 @@ use App\Auth\Auth; use App\Helpers\Csrf; use App\Helpers\View; use App\Services\
 return function(PDO $db): void {
     $setting=function(string $key,string $default='')use($db):string{static $cache=[];if(!array_key_exists($key,$cache)){$s=$db->prepare('SELECT setting_value FROM settings WHERE setting_key=?');$s->execute([$key]);$v=$s->fetchColumn();$cache[$key]=$v!==false?$v:$default;}return $cache[$key];};
     $guardAdminTarget=function(int $targetId)use($db):void{$rc=$db->prepare('SELECT r.code FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=?');$rc->execute([$targetId]);if($rc->fetchColumn()==='ADMIN')throw new RuntimeException('Only an administrator can manage another administrator account.');};
+    // canteen_images/ sits directly under the app's public/static root — but
+    // where that root actually is depends on the deployment layout: locally
+    // (and on any host pointed at public/ as the docroot) routes/web.php's
+    // own parent directory is the *project* root, one level above public/;
+    // on Hostinger-style flat hosting, everything (including canteen_images
+    // itself) is deployed straight into that same parent directory, with no
+    // public/ subfolder at all. Hardcoding ".../public/canteen_images" (as
+    // this used to) only ever matched the first case, which is exactly why
+    // the picker came back empty in production: scandir() on a directory
+    // that doesn't exist there just returns nothing, not an error. Checking
+    // which shape is actually on disk — the same adaptive approach
+    // public/index.php already uses for $root — makes this work unmodified
+    // in both.
+    $projectRoot=dirname(__DIR__);
+    $canteenImagesDir=is_dir($projectRoot.'/public/canteen_images')?$projectRoot.'/public/canteen_images':$projectRoot.'/canteen_images';
     $action=$_POST['action']??''; $user=Auth::user(); if($action){Csrf::verify($_POST['_csrf']??null); try { if($action==='login'){if(!Auth::attempt($db,Validator::text($_POST['email']??'','email, mobile number or full name',150),$_POST['password']??''))throw new InvalidArgumentException('Incorrect email, mobile number, full name or password.');View::redirect('/'.(Auth::can('ADMIN')?'dashboard':'tables'));}
         if(!Auth::check())throw new RuntimeException('Please sign in.');$order=new OrderService($db);if($action==='logout'){Auth::logout();View::redirect('/');}if($action==='order_create'){View::redirect('/order?id='.$order->create(Validator::positiveInt($_POST['table_id']??null,'table'),$user,$setting('order_number_format','ORD-{seq}')));}if($action==='order_edit'){$order->update(Validator::positiveInt($_POST['order_id']??null,'order'),Validator::positiveInt($_POST['table_id']??null,'table'),(string)($_POST['status']??'DRAFT'),(string)($_POST['order_type']??'TABLE'),$user,Auth::can('ADMIN'));View::flash('success','Order updated.');View::redirect('/orders');}if($action==='order_sync'){$payload=json_decode($_POST['payload']??'',true,512,JSON_THROW_ON_ERROR);$order->sync(Validator::positiveInt($_POST['order_id']??null,'order'),$payload,$user);View::flash('success','Order saved.');View::redirect('/order?id='.(int)$_POST['order_id']);}if($action==='order_pay'){$result=$order->pay(Validator::positiveInt($_POST['order_id']??null,'order'),$_POST['method']??'',$user,$setting('bill_number_format','BILL-{seq}'),$setting('auto_free_table_after_completion','1')==='1');View::flash('payment_success',json_encode($result));View::redirect('/'.($result['order_type']==='TAKEAWAY'?'parcels':'tables'));}if($action==='order_cancel'){if(!Auth::allowed($db,'cancel_orders'))throw new RuntimeException('You do not have permission to cancel orders/bills.');if($setting('allow_order_cancellation','1')!=='1')throw new RuntimeException('Order cancellation is currently disabled in Settings.');$reasonRequired=$setting('require_cancellation_reason','1')==='1';$reason=$reasonRequired?Validator::text($_POST['reason']??'','cancellation reason'):trim((string)($_POST['reason']??''));$order->cancel(Validator::positiveInt($_POST['order_id']??null,'order'),$reason,$user,$setting('auto_free_table_after_completion','1')==='1');View::flash('success','Bill cancelled and preserved in history.');View::redirect('/cancelled');}
         if($action==='discount_approve'){if(!Auth::can('ADMIN','MANAGER'))throw new RuntimeException('Only an administrator or manager can approve discounts.');$id=Validator::positiveInt($_POST['order_id']??null,'order');$order->approveDiscount($id,$user);View::flash('success','Discount approved.');View::redirect('/order?id='.$id);}
@@ -23,7 +38,7 @@ return function(PDO $db): void {
         $imagePath=trim((string)($_POST['image_path']??''));
         if($imagePath!==''){
             if(!preg_match('/^[A-Za-z0-9 _\-\.]+\.webp$/',$imagePath))throw new InvalidArgumentException('Invalid image selection.');
-            $imagesDir=realpath(dirname(__DIR__).'/public/canteen_images');
+            $imagesDir=realpath($canteenImagesDir);
             $chosen=$imagesDir?realpath($imagesDir.'/'.$imagePath):false;
             if(!$imagesDir||!$chosen||strncmp($chosen,$imagesDir,strlen($imagesDir))!==0||!is_file($chosen))throw new InvalidArgumentException('Invalid image selection.');
         }
@@ -140,7 +155,7 @@ return function(PDO $db): void {
     if(isset($_GET['images'])&&$page==='menu'){
         header('Content-Type: application/json'); header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0'); header('Pragma: no-cache');
         if(!Auth::allowed($db,'menu')){http_response_code(403); echo json_encode(['error'=>'Forbidden']); return;}
-        $dir=dirname(__DIR__).'/public/canteen_images';
+        $dir=$canteenImagesDir;
         $images=[];
         foreach(is_dir($dir)?scandir($dir):[] as $f){
             if($f==='.'||$f==='..')continue;
