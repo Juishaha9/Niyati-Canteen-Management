@@ -3,12 +3,21 @@ namespace App\Services;
 use PDO;
 final class PageDataService {
     public function __construct(private PDO $db) {}
-    public function data(string $page,array $user,array $q=[]):array { return ['settings'=>$this->settings()] + match($page){
+    // counters (with each one's bridge online/printers status) is included
+    // on every page, same as settings — printing (Test Print, reprint,
+    // post-payment auto-print) can be triggered from Tables/Order/Bills,
+    // not just the Settings screen, so the browser needs to know which
+    // counter/bridge to target regardless of which page it's currently on.
+    public function data(string $page,array $user,array $q=[]):array { return ['settings'=>$this->settings(),'counters'=>$this->counters()] + match($page){
         'dashboard'=>$this->dashboard(), 'tables'=>$this->tables(), 'parcels'=>$this->parcels(), 'order'=>$this->order((int)($q['id']??0)), 'orders'=>$this->orders(), 'bills'=>$this->bills(), 'cancelled'=>$this->cancelled(), 'modified'=>$this->modified(), 'menu'=>$this->menu(), 'categories'=>['categories'=>$this->all('SELECT c.*,COUNT(m.id) item_count FROM menu_categories c LEFT JOIN menu_items m ON m.category_id=c.id AND m.active=1 GROUP BY c.id ORDER BY c.sort_order,c.name')], 'users'=>['users'=>$this->all('SELECT u.id,u.email,u.display_name,u.mobile,u.active,u.last_login_at,u.created_at,r.id role_id,r.code role FROM users u JOIN roles r ON r.id=u.role_id ORDER BY u.display_name'),'roles'=>$this->all('SELECT * FROM roles ORDER BY id')], 'reports'=>$this->reports($q), 'audits'=>$this->audits(), 'settings'=>$this->settingsPage(), default=>$this->tables()}; }
     private function tables():array{return ['tables'=>$this->all("SELECT t.*,o.id order_id,o.order_number,o.grand_total FROM canteen_tables t LEFT JOIN orders o ON o.table_id=t.id AND o.status IN ('DRAFT','OPEN','SERVED') WHERE t.active=1 AND t.kind='TABLE' ORDER BY t.sort_order,t.table_name")];}
     private function parcels():array{return ['tables'=>$this->all("SELECT t.*,o.id order_id,o.order_number,o.grand_total FROM canteen_tables t LEFT JOIN orders o ON o.table_id=t.id AND o.status IN ('DRAFT','OPEN','SERVED') WHERE t.active=1 AND t.kind='PARCEL' ORDER BY t.sort_order,t.table_name")];}
     private function menu():array{return ['categories'=>$this->all('SELECT * FROM menu_categories WHERE active=1 ORDER BY sort_order,name'),'menu'=>$this->all('SELECT m.*,c.name category_name FROM menu_items m JOIN menu_categories c ON c.id=m.category_id WHERE m.active=1 ORDER BY c.sort_order,m.sort_order,m.name'),'variants'=>$this->all('SELECT * FROM menu_item_variants WHERE active=1 ORDER BY sort_order,name')];}
-    private function order(int $id):array{$order=$this->one('SELECT o.*,t.table_name,u.display_name created_by_name FROM orders o JOIN canteen_tables t ON t.id=o.table_id JOIN users u ON u.id=o.created_by WHERE o.id=?',[$id]);if(!$order)return ['missing'=>true];$menu=$this->menu();return $menu+['order'=>$order,'items'=>$this->all('SELECT oi.*,idx.discount_type item_discount_type,idx.discount_value item_discount_value FROM order_items oi LEFT JOIN item_discounts idx ON idx.order_item_id=oi.id AND idx.active=1 WHERE oi.order_id=? ORDER BY oi.id',[$id]),'audits'=>$this->all('SELECT a.*,u.display_name FROM order_audits a JOIN users u ON u.id=a.user_id WHERE a.order_id=? ORDER BY a.created_at DESC',[$id]),'settings'=>$this->settings()];}
+    // p.method (payment_method) is a pure read-only addition for receipt
+    // printing — the payments row itself and every amount/number on it are
+    // untouched; a DRAFT/OPEN order simply has no payments row yet, so this
+    // is NULL until pay() actually inserts one.
+    private function order(int $id):array{$order=$this->one('SELECT o.*,t.table_name,u.display_name created_by_name,p.method payment_method FROM orders o JOIN canteen_tables t ON t.id=o.table_id JOIN users u ON u.id=o.created_by LEFT JOIN payments p ON p.order_id=o.id WHERE o.id=?',[$id]);if(!$order)return ['missing'=>true];$menu=$this->menu();return $menu+['order'=>$order,'items'=>$this->all('SELECT oi.*,idx.discount_type item_discount_type,idx.discount_value item_discount_value FROM order_items oi LEFT JOIN item_discounts idx ON idx.order_item_id=oi.id AND idx.active=1 WHERE oi.order_id=? ORDER BY oi.id',[$id]),'audits'=>$this->all('SELECT a.*,u.display_name FROM order_audits a JOIN users u ON u.id=a.user_id WHERE a.order_id=? ORDER BY a.created_at DESC',[$id]),'settings'=>$this->settings()];}
     private function dashboard():array{
         $today=$this->summary("DATE(completed_at)=CURDATE()");
         $yesterday=$this->summary("DATE(completed_at)=DATE_SUB(CURDATE(), INTERVAL 1 DAY)");
@@ -164,6 +173,21 @@ final class PageDataService {
         $byUser=[]; foreach($grants as $g){$byUser[$g['user_id']][]=$g['permission_code'];}
         foreach($users as &$u){$u['permissions']=$byUser[$u['id']]??[];} unset($u);
         return ['settings'=>$this->settings(),'permissionCatalog'=>$this->all('SELECT code,name FROM permissions ORDER BY sort_order'),'permissionUsers'=>$users];
+    }
+    // A bridge is considered online purely from recency of its own
+    // last_seen_at heartbeat (updated on every /print-bridge poll) — no
+    // separate "status" column to drift out of sync with reality. 20s
+    // tolerates a couple of missed ~5s poll cycles without flickering the
+    // indicator between online/offline.
+    private function counters():array{
+        $counters=$this->all('SELECT c.id,c.name,c.active,pb.id bridge_id,pb.bridge_code,pb.printers_json,pb.last_seen_at FROM counters c LEFT JOIN print_bridges pb ON pb.counter_id=c.id WHERE c.active=1 ORDER BY c.sort_order,c.name');
+        foreach($counters as &$c){
+            $c['printers']=$c['printers_json']?(json_decode($c['printers_json'],true)?:[]):[];
+            $c['online']=$c['last_seen_at']&&(strtotime($c['last_seen_at'])>=time()-20);
+            unset($c['printers_json']);
+        }
+        unset($c);
+        return $counters;
     }
     private function one(string $sql,array $v=[]):array{$s=$this->db->prepare($sql);$s->execute($v);return $s->fetch()?:[];}private function all(string $sql,array $v=[]):array{$s=$this->db->prepare($sql);$s->execute($v);return $s->fetchAll();}
 }

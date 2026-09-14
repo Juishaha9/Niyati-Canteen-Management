@@ -1,6 +1,7 @@
 // The dynamic page payload is server-shaped; runtime validation remains authoritative in PHP.
 // @ts-nocheck
 import React,{useMemo,useState,useEffect,useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {LayoutDashboard,Table2,Package,ClipboardList,ReceiptText,Utensils,Tags,Users,BarChart3,Percent,Gift,History,Settings,LogOut,Plus,Minus,Search,Printer,IndianRupee,ChevronRight,ChevronDown,Menu as MenuIcon,TrendingUp,XCircle,Pencil,X,Trash2,CheckCircle2,Clock,RotateCcw,Wallet,Smartphone,Coffee,Sunrise,Soup,UtensilsCrossed,Salad,GlassWater,ChefHat,Star,Sandwich,MoreVertical,Eye,EyeOff,Info,ShieldCheck,RefreshCw,AlertTriangle,User,KeyRound,Camera,Maximize2,Minimize2,Download} from 'lucide-react'; import '../css/app.css'; import type {Boot,AnyRecord} from './types';
+import {buildEscPosBuffer,bytesToBase64,PAPER_PROFILES} from './receipt';
 declare global{interface Window{__CANTEEN__:Boot}} const boot=window.__CANTEEN__; const money=(v:any)=>'₹'+Number(v||0).toFixed(2); const Form=({children,method='post',...p}:any)=><form method={method} {...p}>{method==='post'&&<input type="hidden" name="_csrf" value={boot.csrf}/>} {children}</form>; const toggleSidebar=()=>document.querySelector('.sidebar')?.classList.toggle('collapsed');
 const settingOn=(k:string,def=true)=>{const v=(boot.data as any)?.settings?.[k];return v===undefined?def:v==='1'};
 
@@ -210,6 +211,7 @@ const applyThermalPageSize=()=>{
   // user might reach for, not just the in-app button.
   const bill=document.querySelector('.print-bill') as HTMLElement|null;
   if(!bill)return;
+  const widthMm=bill.classList.contains('paper-58')?58:80;
   const prev={display:bill.style.display,position:bill.style.position,visibility:bill.style.visibility,left:bill.style.left,top:bill.style.top};
   bill.style.setProperty('display','block','important');
   bill.style.setProperty('position','fixed','important');
@@ -223,11 +225,12 @@ const applyThermalPageSize=()=>{
   if(!style){style=document.createElement('style'); style.id='thermal-page-style'; document.head.appendChild(style)}
   // Chrome's print pipeline resolves .print-bill's percentage/auto margins
   // against html/body's width, not the @page size above — if that ends up
-  // wider than 80mm (observed in practice), centering the receipt then
+  // wider than the paper (observed in practice), centering the receipt then
   // shoves it sideways far enough to clip the rightmost table column off
-  // the physical page. Pinning html/body to 80mm too (print-only, scoped to
-  // this same removable style tag) keeps that containing block accurate.
-  style.textContent=`@page{size:80mm ${heightMm}mm;margin:0}@media print{html,body{width:80mm!important;max-width:80mm!important}}`;
+  // the physical page. Pinning html/body to the same width too (print-only,
+  // scoped to this same removable style tag) keeps that containing block
+  // accurate at either 80mm or 58mm.
+  style.textContent=`@page{size:${widthMm}mm ${heightMm}mm;margin:0}@media print{html,body{width:${widthMm}mm!important;max-width:${widthMm}mm!important}}`;
 };
 const clearThermalPageSize=()=>{document.getElementById('thermal-page-style')?.remove()};
 // One click, straight into Chrome's normal print flow — no popup window.
@@ -236,6 +239,171 @@ const clearThermalPageSize=()=>{document.getElementById('thermal-page-style')?.r
 // printing, so there's no remaining reason to isolate the print job in a
 // separate window.
 const printThermalBill=()=>{applyThermalPageSize(); window.print()};
+// ===== Local printer agent (instant/silent ESC/POS printing) =====
+// This app's PHP/MySQL backend runs on shared hosting with no route at all
+// to a USB thermal printer sitting on a cashier's Windows PC, and no print
+// job is ever routed through it for that reason — printing instead happens
+// entirely between this browser tab and a small standalone process the
+// cashier runs once on their own PC (see print-agent/README.md), which is
+// the only thing that actually talks to the OS print spooler. When that
+// agent isn't configured or isn't reachable, every print action below
+// falls back to the existing browser print path (printThermalBill) that
+// was already working before this feature existed — this file never
+// removes that fallback, only adds an instant path in front of it.
+const AGENT_TIMEOUT_MS=4000;
+function printerSettings(){
+  const s=(boot.data as any)?.settings||{};
+  return {
+    paperWidth:(s.printer_paper_width==='58'?'58':'80') as '58'|'80',
+    autoPrint:s.printer_auto_print==='1',
+    autoCut:s.printer_auto_cut!=='0',
+    agentUrl:String(s.printer_agent_url||'').replace(/\/+$/,''),
+    printerName:String(s.printer_name||''),
+    counterId:s.printer_counter_id?Number(s.printer_counter_id):null,
+  };
+}
+// The counter this browser is configured for, plus whether ITS bridge has
+// heartbeated recently — read from boot.data.counters, which every page
+// response carries (see PageDataService::data(), which merges it in
+// alongside `settings` for exactly this reason: printing can be triggered
+// from Tables/Order/Bills, not only the Settings screen).
+function configuredCounter():any|null{
+  const cfg=printerSettings();
+  if(!cfg.counterId)return null;
+  const counters=(boot.data as any)?.counters||[];
+  return counters.find((c:any)=>Number(c.id)===cfg.counterId)||null;
+}
+async function fetchAgent(agentUrl:string,path:string,init?:any):Promise<Response>{
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),AGENT_TIMEOUT_MS);
+  try{return await fetch(agentUrl+path,{...(init||{}),signal:ctrl.signal})}
+  finally{clearTimeout(timer)}
+}
+async function checkAgentStatus(agentUrl:string):Promise<{ok:boolean;printers:string[];error?:string}>{
+  if(!agentUrl)return{ok:false,printers:[],error:'No printer agent address configured.'};
+  try{
+    const res=await fetchAgent(agentUrl,'/status');
+    if(!res.ok)return{ok:false,printers:[],error:'Agent responded with an error.'};
+    const data=await res.json();
+    return{ok:true,printers:Array.isArray(data.printers)?data.printers:[]};
+  }catch{return{ok:false,printers:[],error:'Could not reach the local printer agent. Is it running on this PC?'}}
+}
+async function sendToAgent(agentUrl:string,printerName:string,bytes:Uint8Array):Promise<{ok:boolean;error?:string}>{
+  if(!agentUrl)return{ok:false,error:'No printer agent configured. Set one up in Settings → Printer.'};
+  try{
+    const res=await fetchAgent(agentUrl,'/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({printerName,dataBase64:bytesToBase64(bytes)})});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok||!data.ok)return{ok:false,error:data.error||'The printer agent reported a failure.'};
+    return{ok:true};
+  }catch{return{ok:false,error:'Could not reach the local printer agent. Is it running on this PC?'}}
+}
+// Bridges this app's existing order/item shape (unchanged — see
+// PageDataService::order() in PHP) into receipt.ts's plain formatting
+// input. Every money value here is read directly from the order/order_items
+// rows the server already computed and stored (order.subtotal,
+// discount_amount, complementary_amount, grand_total; item.net_amount) —
+// nothing is recalculated here, so this can never disagree with the
+// authoritative numbers OrderService.php already wrote to the database.
+function orderReceiptPayload(order:any,items:any[],settings:any){
+  const header={
+    canteenName:settings.canteen_name||'Canteen',
+    address:settings.address||'',
+    phone:settings.phone||'',
+    gstNumber:settings.gst_number||'',
+    billNumber:order.bill_number||order.order_number||'',
+    tableName:order.table_name||'',
+    waiterName:order.created_by_name||'',
+    paymentMethod:order.payment_method||'',
+    dateText:new Date().toLocaleString(),
+    showTableNumber:settings.show_table_number!=='0',
+    showWaiterName:settings.show_waiter_name!=='0',
+    showThankYou:settings.show_thank_you_message!=='0',
+    thankYouMessage:settings.thank_you_message||'',
+  };
+  const receiptItems=(items||[]).map((x:any)=>({
+    name:x.item_name_snapshot+(x.variant_name_snapshot?` (${x.variant_name_snapshot})`:'')+(Number(x.complementary_amount)>0?' - Complementary':''),
+    quantity:Number(x.quantity),
+    rate:Number(x.unit_price),
+    amount:Number(x.net_amount),
+  }));
+  const totals={
+    subtotal:Number(order.subtotal||0),
+    complementary:Number(order.complementary_amount||0),
+    discount:Number(order.discount_amount||0),
+    grandTotal:Number(order.grand_total||0),
+  };
+  return{header,items:receiptItems,totals};
+}
+// ===== Server-mediated print queue (production architecture) =====
+// PWA -> this app's own PHP server -> print_jobs queue -> the counter's
+// Niyati Print Bridge -> printer. Neither a PC nor a mobile browser ever
+// calls a counter PC directly — the server is the broker, which is what
+// lets a mobile device (with no possible route to a till PC's loopback
+// address) request printing at all. Creating a job here never claims
+// success: the job starts QUEUED and only becomes PRINTED once the correct
+// bridge has actually reported it, which pollJobStatus below checks for.
+async function createServerPrintJob(kind:'RECEIPT'|'TEST',orderId:number|null,counterId:number,paperWidth:string,bytes:Uint8Array):Promise<{ok:boolean;jobId?:number;error?:string}>{
+  try{
+    const body=new URLSearchParams({action:kind==='TEST'?'print_test_job_create':'print_job_create',_csrf:boot.csrf,counter_id:String(counterId),paper_width:paperWidth,escpos_base64:bytesToBase64(bytes)});
+    if(kind==='RECEIPT'&&orderId)body.set('order_id',String(orderId));
+    const res=await fetch(location.pathname+location.search,{method:'POST',credentials:'same-origin',body});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok||!data.ok)return{ok:false,error:data.error||'Could not queue the print job.'};
+    return{ok:true,jobId:data.job_id};
+  }catch{return{ok:false,error:'Could not reach the server to queue the print job.'}}
+}
+// Short client-side poll so the UI can report a genuine PRINTED/FAILED
+// outcome instead of just "sent" — the bridge itself polls the server on
+// its own schedule (see print-agent's /status equivalent, or the future
+// Print Bridge's poll loop), so this is purely about giving the cashier a
+// real answer, not about how the job actually gets claimed/printed.
+async function pollJobStatus(jobId:number,{tries=8,intervalMs=800}:{tries?:number;intervalMs?:number}={}):Promise<{status:string;error?:string}>{
+  for(let i=0;i<tries;i++){
+    try{
+      const res=await fetch('/tables?job_status='+jobId,{credentials:'same-origin',cache:'no-store'});
+      const data=await res.json();
+      if(data.status==='PRINTED'||data.status==='FAILED'||data.status==='CANCELLED')return{status:data.status,error:data.last_error};
+    }catch{/* transient — keep polling until tries run out */}
+    await new Promise(r=>setTimeout(r,intervalMs));
+  }
+  return{status:'QUEUED'};
+}
+// The one place that decides HOW a bill actually gets printed, in order:
+// (1) the server-mediated bridge, if a counter is configured and its
+// bridge has heartbeated recently — this is the production path, and the
+// only one that works for a mobile device with no route to a till PC; (2)
+// the legacy local agent (127.0.0.1, development-only — see
+// print-agent/README.md); (3) the existing browser print dialog, exactly
+// as it worked before this feature existed. `silent` distinguishes an
+// explicit user click (fine to fall back to Chrome's print dialog) from an
+// automatic post-payment print (must never surprise the cashier with an
+// unexpected print dialog — on failure it just reports back so the caller
+// can show a manual retry link instead). Either way, this only ever runs
+// on a bill that already exists — every call site is reached strictly
+// after payment/order data has been read back from the server, never
+// before or instead of it.
+async function printOrderReceipt(order:any,items:any[],settings:any,opts:{silent?:boolean}={}):Promise<{ok:boolean;via:'bridge'|'agent'|'browser'|'none';error?:string;jobId?:number}>{
+  const cfg=printerSettings();
+  const {header,items:receiptItems,totals}=orderReceiptPayload(order,items,settings);
+  const bytes=buildEscPosBuffer(header,receiptItems,totals,cfg.paperWidth,{cut:cfg.autoCut,feedLinesBeforeCut:3});
+  const counter=configuredCounter();
+  if(counter&&counter.online){
+    const created=await createServerPrintJob('RECEIPT',order.id?Number(order.id):null,Number(counter.id),cfg.paperWidth,bytes);
+    if(created.ok&&created.jobId){
+      const final=await pollJobStatus(created.jobId);
+      if(final.status==='PRINTED')return{ok:true,via:'bridge',jobId:created.jobId};
+      if(opts.silent)return{ok:false,via:'none',error:final.error||'Print bridge did not confirm printing.',jobId:created.jobId};
+    }else if(opts.silent)return{ok:false,via:'none',error:created.error};
+  }
+  if(cfg.agentUrl){
+    const result=await sendToAgent(cfg.agentUrl,cfg.printerName,bytes);
+    if(result.ok)return{ok:true,via:'agent'};
+    if(opts.silent)return{ok:false,via:'none',error:result.error};
+  }
+  if(opts.silent)return{ok:false,via:'none',error:'No printer bridge or agent configured.'};
+  printThermalBill();
+  return{ok:true,via:'browser'};
+}
 const hasPermission=(code:string)=>boot.user.role==='ADMIN'||(boot.user.permissions||[]).includes(code);
 const logoSrc=(path?:string)=>path?`/?media=${encodeURIComponent(path)}`:null;
 const MENU_IMAGE_MAP:Record<string,string>={'tea':'tea.webp','special tea':'special tea.webp','coffee':'coffee.webp','milk':'milk.webp','pohe':'pohe.webp','upit':'upit.webp','sheera':'sheera.webp','kurma puri':'kurma puri.webp','kolhapuri misal':'kolhapuri misal.webp','vada pav':'vada pav.webp','dahi vada':'dahi vada.webp','kat vada':'kat vada.webp','mirchi bajji':'mirchi bajji.webp','idli sambar':'idli sambar.webp','masala dosa':'masala dosa.webp','plain dosa':'plain dosa.webp','sponge dosa':'sponge dosa.webp','onion uttapam':'onion uttapam.webp','tomato omelette':'tomato omelette.webp','medu vada sambar':'medu vada sambar.webp','paper dosa':'paper dosa.webp','idli vada sambar':'idli vada sambar.webp','rice plate':'rice-plate.webp','jhunka bhakri':'zunka-bhakri.webp','shalu khichdi':'sabudana-khichdi.webp','tak':'taak.webp','lassi':'lassi.webp','paani':'water-bottle.webp','cold drinks':'cold-drink-bottles.webp','veg manchurian':'veg-manchurian.webp','veg noodles':'veg-noodles.webp','pulav':'pulav.webp','samosa':'samosa.webp'};
@@ -663,6 +831,45 @@ function PaymentSuccessToast(){
     <div><b>Payment Successful</b><span>{info.bill_number} · {money(info.amount)} · {info.method}</span></div>
   </div>;
 }
+// Fires at most once per payment (same one-shot flash as PaymentSuccessToast
+// above, so a re-render from table polling can never trigger a second print)
+// and only when the "print automatically after payment" setting is on.
+// Strictly a post-payment side effect: it reads the SAME payment_success
+// flash that already proves OrderService::pay() committed, then fetches the
+// now-PAID order back from the server (the normal, already-authenticated
+// /order?id=X route) to get the real stored items/totals for the receipt —
+// it never computes or guesses a total itself, and never runs before a
+// payment exists. On failure it never falls back to opening a print dialog
+// unprompted (see printOrderReceipt's `silent` mode) — only a small inline
+// notice with a manual reprint link, so an offline printer can never block
+// or confuse the payment flow itself.
+function PostPaymentAutoPrint(){
+  const [state,setState]=useState<'idle'|'trying'|'failed'>('idle');
+  const [orderId,setOrderId]=useState<number|null>(null);
+  useEffect(()=>{
+    const raw=boot.flash.payment_success; if(!raw)return;
+    let info:any; try{info=JSON.parse(raw)}catch{return}
+    if(!info||!info.order_id)return;
+    setOrderId(info.order_id);
+    if(printerSettings().agentUrl===''||!printerSettings().autoPrint)return;
+    setState('trying');
+    (async()=>{
+      try{
+        const res=await fetch('/order?id='+info.order_id,{credentials:'same-origin'});
+        const html=await res.text();
+        const m=html.match(/window\.__CANTEEN__=(\{[\s\S]*?\});<\/script>/);
+        if(!m)throw new Error('session');
+        const newBoot=JSON.parse(m[1]);
+        const result=await printOrderReceipt(newBoot.data.order,newBoot.data.items||[],newBoot.data.settings||{},{silent:true});
+        setState(result.ok?'idle':'failed');
+      }catch{setState('failed')}
+    })();
+  },[]);
+  if(state!=='failed'||!orderId)return null;
+  return <div className="alert error printer-auto-print-alert" role="status">
+    Auto-print failed — the printer may be offline. <a href={'/order?id='+orderId+'&print=1'}>Reprint this bill</a>
+  </div>;
+}
 // Keeps the Tables/Parcels grid in sync across devices without WebSockets:
 // a plain 5s poll against the same page's own JSON variant (?poll=1, same
 // query PageDataService already runs for the initial SSR), refreshed
@@ -702,12 +909,12 @@ function useTablesPolling(initial:any[]){
   },[]);
   return tables;
 }
-function Tables(){const isParcel=boot.page==='parcels';const kind=isParcel?'Parcel':'Table';const Icon=isParcel?Package:Table2;const tables=useTablesPolling(boot.data.tables||[]);const [editing,setEditing]=useState<any>(null);const [showModal,setShowModal]=useState(false);const isAdmin=boot.user.role==='ADMIN';const startFormRefs=useRef<Record<number,HTMLFormElement|null>>({});const openAdd=()=>{setEditing(null);setShowModal(true)};const startEdit=(t:any,e:any)=>{e.stopPropagation();setEditing(t);setShowModal(true)};const occupiedCount=tables.filter((t:any)=>t.status!=='AVAILABLE').length;const availableCount=tables.length-occupiedCount;return <><PaymentSuccessToast/><div className="section-head"><h2 className="page-heading">{kind.toUpperCase()}S</h2>{isAdmin&&<button type="button" className="primary tables-add-btn" onClick={openAdd}><Plus size={16}/> Add {kind}</button>}</div>{!isParcel&&<section className="table-widgets"><article className="table-widget widget-available"><div><small>Available {kind}s</small><strong>{availableCount}</strong></div><span className="widget-icon"><CheckCircle2/></span></article><article className="table-widget widget-occupied"><div><small>Occupied {kind}s</small><strong>{occupiedCount}</strong></div><span className="widget-icon"><Users/></span></article></section>}<div className="table-grid">{tables.map((t:any)=><article className={'table-card '+t.status.toLowerCase()} key={t.id} onClick={(e:any)=>{if((e.target as HTMLElement).closest('button,a,input'))return;if(t.order_id)go('order?id='+t.order_id);else startFormRefs.current[t.id]?.requestSubmit()}}><div className="table-card-body"><div className="table-card-top"><span className="table-card-icon"><Icon size={17}/></span>{!isParcel&&<small>{t.status}</small>}{isAdmin&&<div className="table-card-actions"><button type="button" className="menu-card-icon-btn" title={`Edit ${kind.toLowerCase()}`} onClick={(e:any)=>startEdit(t,e)}><Pencil size={14}/></button></div>}</div><h2>{t.table_name}</h2>{t.order_id&&<b>{money(t.grand_total)}</b>}</div>{!t.order_id&&<form ref={(el:any)=>{startFormRefs.current[t.id]=el}} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="order_create"/><input type="hidden" name="table_id" value={t.id}/></form>}</article>)}</div>{showModal&&<TableModal kind={kind} editing={editing} onClose={()=>setShowModal(false)}/>}</>}
+function Tables(){const isParcel=boot.page==='parcels';const kind=isParcel?'Parcel':'Table';const Icon=isParcel?Package:Table2;const tables=useTablesPolling(boot.data.tables||[]);const [editing,setEditing]=useState<any>(null);const [showModal,setShowModal]=useState(false);const isAdmin=boot.user.role==='ADMIN';const startFormRefs=useRef<Record<number,HTMLFormElement|null>>({});const openAdd=()=>{setEditing(null);setShowModal(true)};const startEdit=(t:any,e:any)=>{e.stopPropagation();setEditing(t);setShowModal(true)};const occupiedCount=tables.filter((t:any)=>t.status!=='AVAILABLE').length;const availableCount=tables.length-occupiedCount;return <><PaymentSuccessToast/><PostPaymentAutoPrint/><div className="section-head"><h2 className="page-heading">{kind.toUpperCase()}S</h2>{isAdmin&&<button type="button" className="primary tables-add-btn" onClick={openAdd}><Plus size={16}/> Add {kind}</button>}</div>{!isParcel&&<section className="table-widgets"><article className="table-widget widget-available"><div><small>Available {kind}s</small><strong>{availableCount}</strong></div><span className="widget-icon"><CheckCircle2/></span></article><article className="table-widget widget-occupied"><div><small>Occupied {kind}s</small><strong>{occupiedCount}</strong></div><span className="widget-icon"><Users/></span></article></section>}<div className="table-grid">{tables.map((t:any)=><article className={'table-card '+t.status.toLowerCase()} key={t.id} onClick={(e:any)=>{if((e.target as HTMLElement).closest('button,a,input'))return;if(t.order_id)go('order?id='+t.order_id);else startFormRefs.current[t.id]?.requestSubmit()}}><div className="table-card-body"><div className="table-card-top"><span className="table-card-icon"><Icon size={17}/></span>{!isParcel&&<small>{t.status}</small>}{isAdmin&&<div className="table-card-actions"><button type="button" className="menu-card-icon-btn" title={`Edit ${kind.toLowerCase()}`} onClick={(e:any)=>startEdit(t,e)}><Pencil size={14}/></button></div>}</div><h2>{t.table_name}</h2>{t.order_id&&<b>{money(t.grand_total)}</b>}</div>{!t.order_id&&<form ref={(el:any)=>{startFormRefs.current[t.id]=el}} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="order_create"/><input type="hidden" name="table_id" value={t.id}/></form>}</article>)}</div>{showModal&&<TableModal kind={kind} editing={editing} onClose={()=>setShowModal(false)}/>}</>}
 function TableModal({kind,editing,onClose}:any){useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);const deleteFormRef=useRef<HTMLFormElement>(null);const onDelete=(e:any)=>{if(confirm(`Delete "${editing.table_name}"? This cannot be undone.`)){startButtonLoading(e.currentTarget,'Deleting');deleteFormRef.current?.requestSubmit()}};return <div className="modal-overlay" onMouseDown={(e:any)=>{if(e.target===e.currentTarget)onClose()}}><div className="modal-panel"><div className="modal-head"><h2>{editing?`Edit ${kind.toLowerCase()}`:`Add ${kind.toLowerCase()}`}</h2><button type="button" className="modal-close" onClick={onClose} title="Close"><X size={18}/></button></div>{editing&&<form ref={deleteFormRef} method="post"><input type="hidden" name="_csrf" value={boot.csrf}/><input type="hidden" name="action" value="table_delete"/><input type="hidden" name="id" value={editing.id}/></form>}<Form key={editing?.id||'new'}><input type="hidden" name="action" value="table_save"/><input type="hidden" name="id" value={editing?.id||0}/><input type="hidden" name="kind" value={kind.toUpperCase()}/><div className="form-grid"><label>{kind} name<input name="table_name" required autoFocus defaultValue={editing?.table_name||''}/></label><label>Display order<input name="sort_order" type="number" defaultValue={editing?.sort_order??0}/></label><label className="check"><input type="checkbox" name="active" defaultChecked={editing?Number(editing.active)===1:true}/>Active</label></div><div className="form-actions"><button className="primary">{editing?`Update ${kind.toLowerCase()}`:`Save ${kind.toLowerCase()}`}</button><button type="button" className="secondary" onClick={onClose}>Cancel</button>{editing&&<button type="button" className="danger" onClick={onDelete}><Trash2 size={14}/> Delete {kind.toLowerCase()}</button>}</div></Form></div></div>}
 function Order(){const d=boot.data;if(d.missing)return <div className="surface">Order not found.</div>;return <OrderEditor order={d.order} menu={d.menu||[]} variants={d.variants||[]} initial={d.items||[]} settings={d.settings||{}}/>}
 function OrderEditor({order,menu,variants,initial,settings}:any){
   const [items,setItems]=useState(initial.map((x:any)=>({...x,menu_item_id:Number(x.menu_item_id),variant_id:x.menu_item_variant_id?Number(x.menu_item_variant_id):null,complementary:Number(x.complementary_amount)>0,discount_type:x.item_discount_type||'NONE',discount_value:x.item_discount_value||''})));
-  useEffect(()=>{if(new URLSearchParams(location.search).get('print')==='1'){const t=setTimeout(printThermalBill,300);return()=>clearTimeout(t)}},[]);
+  useEffect(()=>{if(new URLSearchParams(location.search).get('print')==='1'){const t=setTimeout(()=>{printOrderReceipt(order,items,settings)},300);return()=>clearTimeout(t)}},[]);
   useEffect(()=>{
     window.addEventListener('beforeprint',applyThermalPageSize);
     window.addEventListener('afterprint',clearThermalPageSize);
@@ -745,7 +952,7 @@ function OrderEditor({order,menu,variants,initial,settings}:any){
   const pending=order.discount_approval_status==='PENDING';
   return <div className="order-layout"><section className="menu-area"><div className="order-meta"><div><span>{order.table_name}</span><b>{order.order_number}</b></div><small>Opened {new Date(order.created_at).toLocaleString()} by {order.created_by_name}</small></div><div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search menu or category"/></div><div className="chips order-category-chips">{cats.map(c=><button className={c===category?'selected':''} onClick={()=>setCategory(c)} key={c}>{c}</button>)}</div><div className="menu-scroll"><div className="menu-grid">{filtered.map((m:any,i:number)=>{const vs=variants.filter((v:any)=>v.menu_item_id===m.id);return <article className="food-card" key={m.id} onClick={()=>!vs.length&&m.price!==null&&add(m)}><img loading={i<8?'eager':'lazy'} decoding="async" src={menuImageSrc(m)} alt=""/><div><h3>{m.name}</h3><small>{m.description||m.category_name}</small>{vs.length?<div className="variant-buttons">{vs.map((v:any)=><button type="button" onClick={e=>{e.stopPropagation();add(m,v)}} key={v.id}>{v.name} {money(v.price)}</button>)}</div>:<b>{m.price===null?'Configure price':money(m.price)}</b>}</div></article>})}</div></div></section>
   <aside className="cart">
-    <div className="cart-head"><div><small>Current order</small><h2>{items.length} item{items.length===1?'':'s'}</h2></div><AsyncButton className="icon" title="Print bill" onAction={async()=>printThermalBill()}><Printer size={19}/></AsyncButton></div>
+    <div className="cart-head"><div><small>Current order</small><h2>{items.length} item{items.length===1?'':'s'}</h2></div><AsyncButton className="icon" title="Print bill" onAction={async()=>{await printOrderReceipt(order,items,settings)}}><Printer size={19}/></AsyncButton></div>
     {pending&&<div className="alert warning">This bill's discount is pending {isApprover?'your':'admin/manager'} approval and cannot be paid until it is resolved.
       {isApprover&&<div className="form-actions">
         <Form><input type="hidden" name="action" value="discount_approve"/><input type="hidden" name="order_id" value={order.id}/><button className="secondary" type="submit">Approve discount</button></Form>
@@ -788,7 +995,7 @@ function OrderEditor({order,menu,variants,initial,settings}:any){
     {order.status==='OPEN'&&(pending?<p className="muted">Payment is blocked while a discount is pending approval.</p>:<Form className="pay-form"><input type="hidden" name="action" value="order_pay"/><input type="hidden" name="order_id" value={order.id}/>{String(settings.payment_methods||'CASH,UPI').split(',').filter(Boolean).map((m:string)=><button className="primary" name="method" value={m} key={m}>Pay {m==='CASH'?'cash':m==='UPI'?'UPI':m.charAt(0)+m.slice(1).toLowerCase()}</button>)}</Form>)}
     {hasPermission('cancel_orders')&&settingOn('allow_order_cancellation')&&<details className="cancel"><summary>Cancel this bill</summary><Form onSubmit={(e:any)=>{if(settingOn('confirm_cancel_bill')&&!confirm('Cancel this bill? This will be recorded in cancelled bills history.'))e.preventDefault()}}><input type="hidden" name="action" value="order_cancel"/><input type="hidden" name="order_id" value={order.id}/><input name="reason" required={settingOn('require_cancellation_reason')} placeholder="Cancellation reason"/><button className="danger">Cancel bill</button></Form></details>}
   </aside>
-  <div className="print-bill"><div className="bill-head">{settingOn('show_logo_on_bill')&&settings.logo_path&&<img className="bill-logo" src={logoSrc(settings.logo_path)} alt=""/>}<h2>{settings.canteen_name||'Canteen'}</h2>{settings.address&&<p>{settings.address}</p>}{settings.phone&&<p>Ph: {settings.phone}</p>}{settings.gst_number&&<p>GSTIN: {settings.gst_number}</p>}</div><div className="bill-meta"><div><span>Bill No</span><b>{order.bill_number||order.order_number}</b></div>{settingOn('show_table_number')&&<div><span>Table</span><b>{order.table_name}</b></div>}<div><span>Date</span><b>{new Date().toLocaleString()}</b></div>{settingOn('show_waiter_name')&&<div><span>Served by</span><b>{order.created_by_name}</b></div>}</div><div className="bill-table">
+  <div className={'print-bill'+(settings.printer_paper_width==='58'?' paper-58':'')}><div className="bill-head">{settingOn('show_logo_on_bill')&&settings.logo_path&&<img className="bill-logo" src={logoSrc(settings.logo_path)} alt=""/>}<h2>{settings.canteen_name||'Canteen'}</h2>{settings.address&&<p>{settings.address}</p>}{settings.phone&&<p>Ph: {settings.phone}</p>}{settings.gst_number&&<p>GSTIN: {settings.gst_number}</p>}</div><div className="bill-meta"><div><span>Bill No</span><b>{order.bill_number||order.order_number}</b></div>{settingOn('show_table_number')&&<div><span>Table</span><b>{order.table_name}</b></div>}<div><span>Date</span><b>{new Date().toLocaleString()}</b></div>{settingOn('show_waiter_name')&&<div><span>Served by</span><b>{order.created_by_name}</b></div>}</div><div className="bill-table">
             <div className="bill-row bill-table-head"><span>Item</span><span>Qty</span><span>Rate</span><span>Amount</span></div>
             {items.map((x:any,i:number)=>{const gross=Number(x.unit_price)*Number(x.quantity);const lineDiscount=itemDiscountAmount(x,gross);return <div className="bill-row" key={i}>
               <span>{x.item_name_snapshot}{x.variant_name_snapshot?` (${x.variant_name_snapshot})`:''}{x.complementary?' - Complementary':''}</span>
@@ -2030,7 +2237,7 @@ function SimpleRecords(){const d=boot.data;const list=d.audits||[];const rows=li
       <div className="user-card-field"><small>User</small><b>{x.display_name}</b></div>
       <div className="user-card-field"><small>Date &amp; Time</small><b>{new Date(x.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</b></div>
     </div>)}/>}
-const SETTINGS_TABS=[['profile','My Profile'],['business','Business Information'],['order','Order Settings'],['billing','Billing & Payment'],['discount','Discount & Complimentary'],['access','User Access Settings'],['system','System Preferences']];
+const SETTINGS_TABS=[['profile','My Profile'],['business','Business Information'],['order','Order Settings'],['billing','Billing & Payment'],['discount','Discount & Complimentary'],['printer','Printer'],['access','User Access Settings'],['system','System Preferences']];
 // Business/Order/Billing/Discount/System are business-configuration tabs
 // gated behind the 'settings' permission (matching settings_save's own
 // independent server-side check); 'access' is admin-only on top of that.
@@ -2194,6 +2401,148 @@ function BillingSettingsTab({s}:any){
       <Form onSubmit={(e:any)=>{if(!confirm('Reset Billing & Payment settings to their default values? This will overwrite the current settings and cannot be undone.'))e.preventDefault()}}>
         <input type="hidden" name="action" value="settings_reset"/>
         <input type="hidden" name="group" value="billing"/>
+        <button type="submit" className="secondary">Reset to default settings</button>
+      </Form>
+    </div>
+  </section>;
+}
+// ===== Printer settings: paper width, local agent address, auto-print,
+// connection status, and a Test Print that never touches real bill data. =====
+// 🟢/🟡/🔴 per the online/connecting/offline states this app already uses
+// elsewhere — "online" is computed server-side purely from the bridge's own
+// recent heartbeat (PageDataService::counters()), never guessed client-side.
+function BridgeStatusPill({counter}:any){
+  if(!counter)return <span className="printer-status-pill checking"><Info size={13}/> No counter selected yet</span>;
+  if(counter.online)return <span className="printer-status-pill ok">🟢 Connected{counter.printers?.length?` — ${counter.printers.length} printer${counter.printers.length===1?'':'s'} reported`:''}</span>;
+  // last_seen_at is a plain "Y-m-d H:i:s" written by MySQL's NOW() in the
+  // server's own local timezone (matching PHP's date_default_timezone_set
+  // in config/app.php) — not UTC, so it's parsed as a local wall-clock
+  // string here (space swapped for "T", no "Z"), the one format every
+  // browser accepts without misreading it as UTC.
+  if(counter.bridge_code)return <span className="printer-status-pill down">🔴 Offline — last seen {counter.last_seen_at?new Date(counter.last_seen_at.replace(' ','T')).toLocaleString():'never'}</span>;
+  return <span className="printer-status-pill down">🔴 No Print Bridge registered for this counter yet</span>;
+}
+// Legacy local-agent-only status pill (development compatibility path —
+// see print-agent/README.md). Kept separate from BridgeStatusPill above so
+// the two connection kinds are never visually conflated.
+function PrinterStatusPill({agentUrl}:any){
+  const [state,setState]=useState<'checking'|'ok'|'down'>('checking');
+  const [info,setInfo]=useState<{printers:string[];error?:string}>({printers:[]});
+  const check=async()=>{setState('checking');const r=await checkAgentStatus(agentUrl);setInfo({printers:r.printers,error:r.error});setState(r.ok?'ok':'down')};
+  useEffect(()=>{check()},[agentUrl]);
+  if(state==='checking')return <span className="printer-status-pill checking"><RefreshCw size={13} className="spin"/> Checking…</span>;
+  if(state==='ok')return <span className="printer-status-pill ok">🟢 Agent connected{info.printers.length?` — ${info.printers.length} printer${info.printers.length===1?'':'s'} found`:' — no printers found on this PC'}</span>;
+  return <span className="printer-status-pill down" title={info.error}>🔴 Agent not reachable</span>;
+}
+function BridgeTokenReveal(){
+  const raw=boot.flash.bridge_token_created; if(!raw)return null;
+  let info:any; try{info=JSON.parse(raw)}catch{return null}
+  return <div className="alert success bridge-token-reveal">
+    <b>Print Bridge registered — copy this token now, it will not be shown again:</b>
+    <div className="bridge-token-value"><code>{info.token}</code></div>
+    <small>{info.bridge_code} — paste this token into the Niyati Print Bridge's setup screen on the counter PC.</small>
+  </div>;
+}
+function PrinterSettingsTab({s}:any){
+  const counters=(boot.data as any)?.counters||[];
+  const [counterId,setCounterId]=useState(s.printer_counter_id||'');
+  const [paperWidth,setPaperWidth]=useState(s.printer_paper_width==='58'?'58':'80');
+  const [autoPrint,setAutoPrint]=useState(s.printer_auto_print==='1');
+  const [autoCut,setAutoCut]=useState(s.printer_auto_cut!=='0');
+  const [printerName,setPrinterName]=useState(s.printer_name||'');
+  const [agentUrl,setAgentUrl]=useState(s.printer_agent_url||'http://127.0.0.1:9123');
+  const [testResult,setTestResult]=useState<{ok:boolean;message:string}|null>(null);
+  const canManage=boot.user.role==='ADMIN'||(boot.user.permissions||[]).includes('settings');
+  const selectedCounter=counters.find((c:any)=>String(c.id)===String(counterId))||null;
+  const bridgePrinters:string[]=selectedCounter?.printers||[];
+  const testHeader=()=>({canteenName:s.canteen_name||'Canteen',address:s.address||'',phone:s.phone||'',gstNumber:s.gst_number||'',billNumber:'TEST-PRINT',tableName:'Test Table',waiterName:boot.user.name,paymentMethod:'CASH',dateText:new Date().toLocaleString(),showTableNumber:true,showWaiterName:true,showThankYou:true,thankYouMessage:'This is a test print — no bill or payment was created.'});
+  const testItems=()=>[{name:'Sample Item (Test)',quantity:2,rate:25,amount:50},{name:'Another Sample Item With A Longer Name',quantity:1,rate:75,amount:75}];
+  const testTotals={subtotal:125,complementary:0,discount:0,grandTotal:125};
+  // Test Print deliberately uses the fields as currently typed/selected on
+  // screen, not the last-saved settings — that's the whole point of
+  // testing before committing a change. Prefers the bridge (production
+  // path) whenever a counter is actually selected; the legacy agent below
+  // is a separate, explicitly-labeled button so the two are never confused.
+  const runBridgeTestPrint=async()=>{
+    setTestResult(null);
+    if(!selectedCounter){setTestResult({ok:false,message:'Select a counter first.'});return}
+    const bytes=buildEscPosBuffer(testHeader(),testItems(),testTotals,paperWidth as any,{cut:autoCut,feedLinesBeforeCut:3});
+    const created=await createServerPrintJob('TEST',null,Number(selectedCounter.id),paperWidth,bytes);
+    if(!created.ok||!created.jobId){setTestResult({ok:false,message:created.error||'Could not queue the test print.'});return}
+    const final=await pollJobStatus(created.jobId);
+    if(final.status==='PRINTED')setTestResult({ok:true,message:'Test print confirmed by the Print Bridge.'});
+    else setTestResult({ok:false,message:final.error||(selectedCounter.online?'The Print Bridge did not confirm printing in time.':'This counter\'s Print Bridge is offline — start it on the counter PC and try again.')});
+  };
+  const runAgentTestPrint=async()=>{
+    setTestResult(null);
+    const bytes=buildEscPosBuffer(testHeader(),testItems(),testTotals,paperWidth as any,{cut:autoCut,feedLinesBeforeCut:3});
+    const result=await sendToAgent(agentUrl.replace(/\/+$/,''),printerName,bytes);
+    setTestResult(result.ok?{ok:true,message:'Test print sent to the local agent successfully.'}:{ok:false,message:result.error||'Test print failed.'});
+  };
+  // "Test print in browser" from this Settings tab has no real bill on screen
+  // to print — .print-bill only exists on the Order page — so this just opens
+  // the normal print dialog on the current page as a way to confirm the
+  // browser's own print pipeline reaches the printer at all. The meaningful,
+  // bill-shaped browser fallback already exists on the Order/Bills print
+  // buttons wired to printOrderReceipt() above.
+  const printTestInBrowser=()=>window.print();
+  return <section className="settings-card" style={{marginTop:24}}>
+    <div className="settings-card-head">
+      <span className="settings-card-icon printer"><Printer size={22}/></span>
+      <div><h2>Printer</h2><p>Configure the receipt printer used at the counter — 80mm thermal printers are the primary target, with 58mm supported too.</p></div>
+    </div>
+    <BridgeTokenReveal/>
+    <Form id="settings-form-printer">
+      <input type="hidden" name="action" value="settings_save"/>
+      <input type="hidden" name="group" value="printer"/>
+      <div className="settings-section">
+        <p className="settings-section-title">Printer Bridge</p>
+        <BridgeStatusPill counter={selectedCounter}/>
+        <div className="settings-field-grid" style={{marginTop:14}}>
+          <label>Counter<select name="printer_counter_id" value={counterId} onChange={e=>setCounterId(e.target.value)}><option value="">— No counter selected —</option>{counters.map((c:any)=><option value={c.id} key={c.id}>{c.name}</option>)}</select><small>Which till this browser prints receipts at.</small></label>
+          <label>Available printers{bridgePrinters.length?<select name="printer_name" value={printerName} onChange={e=>setPrinterName(e.target.value)}>{bridgePrinters.map((p:string)=><option value={p} key={p}>{p}</option>)}</select>:<input name="printer_name" value={printerName} onChange={e=>setPrinterName(e.target.value)} placeholder="Printer will appear here once the Bridge connects" disabled={!selectedCounter}/>}<small>Reported automatically by the Niyati Print Bridge — nothing to type once it's connected.</small></label>
+        </div>
+        {canManage&&<div className="form-actions" style={{marginTop:14}}>
+          <AsyncButton className="secondary" loadingText="Generating" onAction={async()=>{if(!counterId){alert('Select or add a counter first.');return}const fd=new FormData();fd.set('action','print_bridge_token_create');fd.set('_csrf',boot.csrf);fd.set('counter_id',String(counterId));const res=await fetch(location.pathname+location.search,{method:'POST',credentials:'same-origin',body:fd});const html=await res.text();const m=html.match(/window\.__CANTEEN__=(\{[\s\S]*?\});<\/script>/);if(m){Object.assign(boot,JSON.parse(m[1]));notifyBootChanged&&notifyBootChanged()}}}><KeyRound size={14}/> Generate Print Bridge token</AsyncButton>
+          {selectedCounter?.bridge_id&&<AsyncButton className="danger" loadingText="Disconnecting" onAction={async()=>{if(!confirm('Disconnect this Print Bridge? The counter PC will need a new token.'))return;const fd=new FormData();fd.set('action','print_bridge_revoke');fd.set('_csrf',boot.csrf);fd.set('bridge_id',String(selectedCounter.bridge_id));await fetch(location.pathname+location.search,{method:'POST',credentials:'same-origin',body:fd});location.reload()}}><XCircle size={14}/> Disconnect Bridge</AsyncButton>}
+        </div>}
+        <div className="info-box" style={{marginTop:12}}><Info size={15}/>Install the Niyati Print Bridge once on the counter PC and it starts automatically with Windows — no Node.js, no command line, no printer sharing to configure. <a href="/PRINTER_AGENT_SETUP.md" target="_blank" rel="noopener">Setup instructions</a>.</div>
+      </div>
+      <div className="settings-section">
+        <p className="settings-section-title">Paper width</p>
+        <div className="pill-select">
+          <PillOption type="radio" name="printer_paper_width" value="80" checked={paperWidth==='80'} onChange={()=>setPaperWidth('80')}>80mm (recommended)</PillOption>
+          <PillOption type="radio" name="printer_paper_width" value="58" checked={paperWidth==='58'} onChange={()=>setPaperWidth('58')}>58mm</PillOption>
+        </div>
+      </div>
+      <div className="settings-section">
+        <ToggleRow name="printer_auto_print" title="Print automatically after payment" hint="Sends the receipt to the Print Bridge the instant a bill is paid, with no button to click. Turn this on only after Test Print succeeds." checked={autoPrint} onChange={setAutoPrint}/>
+        <ToggleRow name="printer_auto_cut" title="Auto-cut after printing" hint="Sends the paper-cut command for printers with an automatic cutter. Printers without one simply ignore it." checked={autoCut} onChange={setAutoCut}/>
+      </div>
+      <details className="printer-legacy-agent">
+        <summary>Local agent (development only)</summary>
+        <p className="muted" style={{marginTop:8}}>For developers running the app on their own PC before a Print Bridge is installed — see print-agent/README.md. Production counters should use the Printer Bridge above instead.</p>
+        <div className="settings-field-grid" style={{marginTop:10}}>
+          <label>Agent address<input name="printer_agent_url" value={agentUrl} onChange={e=>setAgentUrl(e.target.value)} placeholder="http://127.0.0.1:9123"/></label>
+        </div>
+        <div style={{marginTop:12}}><PrinterStatusPill agentUrl={agentUrl.replace(/\/+$/,'')}/></div>
+      </details>
+    </Form>
+    <div className="settings-section">
+      <p className="settings-section-title">Test print</p>
+      <p className="muted" style={{marginTop:-6,marginBottom:10}}>Prints a sample receipt only — never a real bill, order, or payment.</p>
+      <div className="form-actions" style={{marginTop:0}}>
+        <AsyncButton className="primary" loadingText="Printing" onAction={runBridgeTestPrint}><Printer size={15}/> Test Print</AsyncButton>
+        <AsyncButton className="secondary" loadingText="Printing" onAction={runAgentTestPrint}><Printer size={15}/> Test print via local agent</AsyncButton>
+        <AsyncButton className="secondary" loadingText="Preparing" onAction={async()=>printTestInBrowser()}><Printer size={15}/> Test print in browser</AsyncButton>
+      </div>
+      {testResult&&<div className={'alert '+(testResult.ok?'success':'error')} style={{marginTop:12}}>{testResult.message}</div>}
+    </div>
+    <div className="form-actions">
+      <button type="submit" form="settings-form-printer" className="primary">Save changes</button>
+      <Form onSubmit={(e:any)=>{if(!confirm('Reset Printer settings to their default values? This will overwrite the current settings and cannot be undone.'))e.preventDefault()}}>
+        <input type="hidden" name="action" value="settings_reset"/>
+        <input type="hidden" name="group" value="printer"/>
         <button type="submit" className="secondary">Reset to default settings</button>
       </Form>
     </div>
@@ -2407,6 +2756,7 @@ function SettingsPage(){
     {activeTab==='order'&&<OrderSettingsTab s={s}/>}
     {activeTab==='billing'&&<BillingSettingsTab s={s}/>}
     {activeTab==='discount'&&<DiscountComplimentarySettingsTab s={s}/>}
+    {activeTab==='printer'&&<PrinterSettingsTab s={s}/>}
     {activeTab==='access'&&<UserAccessTab permissionUsers={d.permissionUsers||[]} permissionCatalog={d.permissionCatalog||[]}/>}
     {activeTab==='system'&&<SystemSettingsTab s={s}/>}
   </>;

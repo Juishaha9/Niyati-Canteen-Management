@@ -1,8 +1,49 @@
 <?php
-use App\Auth\Auth; use App\Helpers\Csrf; use App\Helpers\View; use App\Services\OrderService; use App\Validators\Validator;
+use App\Auth\Auth; use App\Helpers\Csrf; use App\Helpers\View; use App\Services\OrderService; use App\Services\PrintJobService; use App\Validators\Validator;
 return function(PDO $db): void {
     $setting=function(string $key,string $default='')use($db):string{static $cache=[];if(!array_key_exists($key,$cache)){$s=$db->prepare('SELECT setting_value FROM settings WHERE setting_key=?');$s->execute([$key]);$v=$s->fetchColumn();$cache[$key]=$v!==false?$v:$default;}return $cache[$key];};
     $guardAdminTarget=function(int $targetId)use($db):void{$rc=$db->prepare('SELECT r.code FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=?');$rc->execute([$targetId]);if($rc->fetchColumn()==='ADMIN')throw new RuntimeException('Only an administrator can manage another administrator account.');};
+    // ===== Niyati Print Bridge API (machine-to-machine, no PHP session) =====
+    // A background Windows process has no cookie jar, so it can never pass
+    // Auth::check()/CSRF — it authenticates with a Bearer token instead
+    // (see PrintJobService::authenticateBridge). This branch must run
+    // BEFORE the human action dispatch below (which unconditionally calls
+    // Csrf::verify()) and before the Auth::check() page gate further down,
+    // or a bridge request would always be rejected as an unauthenticated
+    // page view. $_GET['page'] is already set by public/index.php from the
+    // request path before this file runs, so it's safe to read this early.
+    if((($_GET['page']??'')==='print-bridge')){
+        header('Content-Type: application/json'); header('Cache-Control: no-store');
+        $printJobs=new PrintJobService($db);
+        $authHeader=$_SERVER['HTTP_AUTHORIZATION']??($_SERVER['REDIRECT_HTTP_AUTHORIZATION']??'');
+        $token=null; if(preg_match('/^Bearer\s+(.+)$/i',trim($authHeader),$m))$token=trim($m[1]);
+        $bridge=$printJobs->authenticateBridge($token);
+        if(!$bridge){http_response_code(401);echo json_encode(['ok'=>false,'error'=>'Invalid or missing bridge token.']);return;}
+        $bAction=$_POST['action']??($_GET['action']??'');
+        try{
+            if($bAction==='poll'){
+                $printJobs->touchBridge((int)$bridge['id'],(array)($_POST['printers']??[]));
+                echo json_encode(['ok'=>true,'jobs'=>$printJobs->queuedFor((int)$bridge['counter_id'])]); return;
+            }
+            if($bAction==='claim'){
+                $jobId=Validator::positiveInt($_POST['job_id']??null,'job');
+                $job=$printJobs->claim($jobId,(int)$bridge['counter_id'],(int)$bridge['id']);
+                if(!$job){echo json_encode(['ok'=>false,'error'=>'Job already claimed or no longer queued.']);return;}
+                echo json_encode(['ok'=>true,'job'=>$job]); return;
+            }
+            if($bAction==='complete'){
+                $jobId=Validator::positiveInt($_POST['job_id']??null,'job');
+                echo json_encode(['ok'=>$printJobs->complete($jobId,(int)$bridge['counter_id'])]); return;
+            }
+            if($bAction==='fail'){
+                $jobId=Validator::positiveInt($_POST['job_id']??null,'job');
+                $err=Validator::text($_POST['error']??'Print failed.','error message',500,false);
+                echo json_encode(['ok'=>$printJobs->fail($jobId,(int)$bridge['counter_id'],$err?:'Print failed.')]); return;
+            }
+            echo json_encode(['ok'=>false,'error'=>'Unknown bridge action.']);
+        }catch(Throwable $e){echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);}
+        return;
+    }
     // canteen_images/ sits directly under the app's public/static root — but
     // where that root actually is depends on the deployment layout: locally
     // (and on any host pointed at public/ as the docroot) routes/web.php's
@@ -19,7 +60,50 @@ return function(PDO $db): void {
     $projectRoot=dirname(__DIR__);
     $canteenImagesDir=is_dir($projectRoot.'/public/canteen_images')?$projectRoot.'/public/canteen_images':$projectRoot.'/canteen_images';
     $action=$_POST['action']??''; $user=Auth::user(); if($action){Csrf::verify($_POST['_csrf']??null); try { if($action==='login'){if(!Auth::attempt($db,Validator::text($_POST['email']??'','email, mobile number or full name',150),$_POST['password']??''))throw new InvalidArgumentException('Incorrect email, mobile number, full name or password.');View::redirect('/'.(Auth::can('ADMIN')?'dashboard':'tables'));}
-        if(!Auth::check())throw new RuntimeException('Please sign in.');$order=new OrderService($db);if($action==='logout'){Auth::logout();View::redirect('/');}if($action==='order_create'){View::redirect('/order?id='.$order->create(Validator::positiveInt($_POST['table_id']??null,'table'),$user,$setting('order_number_format','ORD-{seq}')));}if($action==='order_edit'){$order->update(Validator::positiveInt($_POST['order_id']??null,'order'),Validator::positiveInt($_POST['table_id']??null,'table'),(string)($_POST['status']??'DRAFT'),(string)($_POST['order_type']??'TABLE'),$user,Auth::can('ADMIN'));View::flash('success','Order updated.');View::redirect('/orders');}if($action==='order_sync'){$payload=json_decode($_POST['payload']??'',true,512,JSON_THROW_ON_ERROR);$order->sync(Validator::positiveInt($_POST['order_id']??null,'order'),$payload,$user);View::flash('success','Order saved.');View::redirect('/order?id='.(int)$_POST['order_id']);}if($action==='order_pay'){$result=$order->pay(Validator::positiveInt($_POST['order_id']??null,'order'),$_POST['method']??'',$user,$setting('bill_number_format','BILL-{seq}'),$setting('auto_free_table_after_completion','1')==='1');View::flash('payment_success',json_encode($result));View::redirect('/'.($result['order_type']==='TAKEAWAY'?'parcels':'tables'));}if($action==='order_cancel'){if(!Auth::allowed($db,'cancel_orders'))throw new RuntimeException('You do not have permission to cancel orders/bills.');if($setting('allow_order_cancellation','1')!=='1')throw new RuntimeException('Order cancellation is currently disabled in Settings.');$reasonRequired=$setting('require_cancellation_reason','1')==='1';$reason=$reasonRequired?Validator::text($_POST['reason']??'','cancellation reason'):trim((string)($_POST['reason']??''));$order->cancel(Validator::positiveInt($_POST['order_id']??null,'order'),$reason,$user,$setting('auto_free_table_after_completion','1')==='1');View::flash('success','Bill cancelled and preserved in history.');View::redirect('/cancelled');}
+        if(!Auth::check())throw new RuntimeException('Please sign in.');$order=new OrderService($db);
+        // Any authenticated user who can process a payment can also queue
+        // its receipt for printing — same permission scope as order_pay
+        // itself. Returns JSON (not a redirect) since this is always called
+        // from a background fetch, never a real form submit, so it's
+        // handled with its own try/catch to bypass the surrounding
+        // redirect-oriented error handling entirely.
+        if($action==='print_job_create'){
+            header('Content-Type: application/json');
+            try{
+                $result=(new PrintJobService($db))->create(Validator::positiveInt($_POST['order_id']??null,'order'),Validator::positiveInt($_POST['counter_id']??null,'counter'),(string)($_POST['paper_width']??'80'),(string)($_POST['escpos_base64']??''),(int)$user['id']);
+                echo json_encode(['ok'=>true]+$result);
+            }catch(Throwable $e){http_response_code(400);echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);}
+            return;
+        }
+        if($action==='print_test_job_create'){
+            header('Content-Type: application/json');
+            try{
+                $result=(new PrintJobService($db))->createTest(Validator::positiveInt($_POST['counter_id']??null,'counter'),(string)($_POST['paper_width']??'80'),(string)($_POST['escpos_base64']??''),(int)$user['id']);
+                echo json_encode(['ok'=>true]+$result);
+            }catch(Throwable $e){http_response_code(400);echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);}
+            return;
+        }
+        if($action==='print_bridge_token_create'){
+            if(!Auth::allowed($db,'settings'))throw new RuntimeException('You do not have permission to manage the printer bridge.');
+            $result=(new PrintJobService($db))->generateBridgeToken(Validator::positiveInt($_POST['counter_id']??null,'counter'),(int)$user['id']);
+            // Shown to the admin exactly once — same one-shot-flash pattern
+            // payment_success already uses below, reused here rather than
+            // inventing a second response shape for "show this once" data.
+            View::flash('bridge_token_created',json_encode($result));View::redirect('/settings?tab=printer');
+        }
+        if($action==='print_bridge_revoke'){
+            if(!Auth::allowed($db,'settings'))throw new RuntimeException('You do not have permission to manage the printer bridge.');
+            (new PrintJobService($db))->revokeBridge(Validator::positiveInt($_POST['bridge_id']??null,'bridge'));
+            View::flash('success','Print bridge disconnected.');View::redirect('/settings?tab=printer');
+        }
+        if($action==='counter_save'){
+            if(!Auth::can('ADMIN'))throw new RuntimeException('Administrator permission required.');
+            $id=(int)($_POST['id']??0);$name=Validator::text($_POST['name']??'','counter name',100);$active=!empty($_POST['active'])?1:0;
+            if($id)$db->prepare('UPDATE counters SET name=?,active=? WHERE id=?')->execute([$name,$active,$id]);
+            else $db->prepare('INSERT INTO counters(name,active,sort_order) VALUES(?,?,(SELECT n FROM (SELECT COALESCE(MAX(sort_order),0)+1 n FROM counters) t))')->execute([$name,$active]);
+            View::flash('success','Counter saved.');View::redirect('/settings?tab=printer');
+        }
+        if($action==='logout'){Auth::logout();View::redirect('/');}if($action==='order_create'){View::redirect('/order?id='.$order->create(Validator::positiveInt($_POST['table_id']??null,'table'),$user,$setting('order_number_format','ORD-{seq}')));}if($action==='order_edit'){$order->update(Validator::positiveInt($_POST['order_id']??null,'order'),Validator::positiveInt($_POST['table_id']??null,'table'),(string)($_POST['status']??'DRAFT'),(string)($_POST['order_type']??'TABLE'),$user,Auth::can('ADMIN'));View::flash('success','Order updated.');View::redirect('/orders');}if($action==='order_sync'){$payload=json_decode($_POST['payload']??'',true,512,JSON_THROW_ON_ERROR);$order->sync(Validator::positiveInt($_POST['order_id']??null,'order'),$payload,$user);View::flash('success','Order saved.');View::redirect('/order?id='.(int)$_POST['order_id']);}if($action==='order_pay'){$result=$order->pay(Validator::positiveInt($_POST['order_id']??null,'order'),$_POST['method']??'',$user,$setting('bill_number_format','BILL-{seq}'),$setting('auto_free_table_after_completion','1')==='1');View::flash('payment_success',json_encode($result));View::redirect('/'.($result['order_type']==='TAKEAWAY'?'parcels':'tables'));}if($action==='order_cancel'){if(!Auth::allowed($db,'cancel_orders'))throw new RuntimeException('You do not have permission to cancel orders/bills.');if($setting('allow_order_cancellation','1')!=='1')throw new RuntimeException('Order cancellation is currently disabled in Settings.');$reasonRequired=$setting('require_cancellation_reason','1')==='1';$reason=$reasonRequired?Validator::text($_POST['reason']??'','cancellation reason'):trim((string)($_POST['reason']??''));$order->cancel(Validator::positiveInt($_POST['order_id']??null,'order'),$reason,$user,$setting('auto_free_table_after_completion','1')==='1');View::flash('success','Bill cancelled and preserved in history.');View::redirect('/cancelled');}
         if($action==='discount_approve'){if(!Auth::can('ADMIN','MANAGER'))throw new RuntimeException('Only an administrator or manager can approve discounts.');$id=Validator::positiveInt($_POST['order_id']??null,'order');$order->approveDiscount($id,$user);View::flash('success','Discount approved.');View::redirect('/order?id='.$id);}
         if($action==='discount_reject'){if(!Auth::can('ADMIN','MANAGER'))throw new RuntimeException('Only an administrator or manager can reject discounts.');$id=Validator::positiveInt($_POST['order_id']??null,'order');$reason=Validator::text($_POST['reason']??'','rejection reason');$order->rejectDiscount($id,$reason,$user);View::flash('success','Discount rejected.');View::redirect('/order?id='.$id);}
         if($action==='table_save'){if(!Auth::can('ADMIN'))throw new RuntimeException('Administrator permission required.');$id=(int)($_POST['id']??0);$kind=($_POST['kind']??'TABLE')==='PARCEL'?'PARCEL':'TABLE';$name=Validator::text($_POST['table_name']??'','table name',64);$active=!empty($_POST['active'])?1:0;$sort=(int)($_POST['sort_order']??0);if($id)$db->prepare('UPDATE canteen_tables SET table_name=?,active=?,sort_order=? WHERE id=?')->execute([$name,$active,$sort,$id]);else{$status=in_array($setting('default_table_status','AVAILABLE'),['AVAILABLE','OCCUPIED','BILLING','RESERVED'],true)?$setting('default_table_status','AVAILABLE'):'AVAILABLE';$db->prepare('INSERT INTO canteen_tables(table_name,kind,status,active,sort_order)VALUES(?,?,?,?,?)')->execute([$name,$kind,$status,$active,$sort]);}View::redirect('/'.($kind==='PARCEL'?'parcels':'tables'));}
@@ -91,9 +175,9 @@ return function(PDO $db): void {
         if($action==='settings_save'){
             if(!Auth::allowed($db,'settings'))throw new RuntimeException('You do not have permission to manage settings.');
             $group=$_POST['group']??'business';
-            $groups=['business'=>['canteen_name','business_name','phone','email','address','gst_number','currency_symbol'],'order'=>['order_number_format','order_number_auto','allow_order_cancellation','require_cancellation_reason','auto_free_table_after_completion'],'billing'=>['bill_number_format','bill_number_auto','payment_methods','show_logo_on_bill','show_waiter_name','show_table_number','show_thank_you_message','thank_you_message'],'discount'=>['discount_enabled','discount_allowed_types','discount_scope','discount_max_percent','discount_max_fixed','discount_approval_threshold_percent','discount_approval_threshold_fixed','complementary_enabled','complementary_roles','complementary_require_reason'],'system'=>['default_table_status','confirm_cancel_order','confirm_cancel_bill','confirm_disable_user']];
+            $groups=['business'=>['canteen_name','business_name','phone','email','address','gst_number','currency_symbol'],'order'=>['order_number_format','order_number_auto','allow_order_cancellation','require_cancellation_reason','auto_free_table_after_completion'],'billing'=>['bill_number_format','bill_number_auto','payment_methods','show_logo_on_bill','show_waiter_name','show_table_number','show_thank_you_message','thank_you_message'],'discount'=>['discount_enabled','discount_allowed_types','discount_scope','discount_max_percent','discount_max_fixed','discount_approval_threshold_percent','discount_approval_threshold_fixed','complementary_enabled','complementary_roles','complementary_require_reason'],'system'=>['default_table_status','confirm_cancel_order','confirm_cancel_bill','confirm_disable_user'],'printer'=>['printer_paper_width','printer_auto_print','printer_auto_cut','printer_agent_url','printer_name','printer_counter_id']];
             if(!isset($groups[$group]))throw new InvalidArgumentException('Invalid settings group.');
-            $checkbox=['order_number_auto','allow_order_cancellation','require_cancellation_reason','auto_free_table_after_completion','bill_number_auto','show_logo_on_bill','show_waiter_name','show_table_number','show_thank_you_message','confirm_cancel_order','confirm_cancel_bill','confirm_disable_user','discount_enabled','complementary_enabled','complementary_require_reason'];
+            $checkbox=['order_number_auto','allow_order_cancellation','require_cancellation_reason','auto_free_table_after_completion','bill_number_auto','show_logo_on_bill','show_waiter_name','show_table_number','show_thank_you_message','confirm_cancel_order','confirm_cancel_bill','confirm_disable_user','discount_enabled','complementary_enabled','complementary_require_reason','printer_auto_print','printer_auto_cut'];
             $save=function(string $key,string $value)use($db,$user){$db->prepare('INSERT INTO settings(setting_key,setting_value,updated_by)VALUES(?,?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),updated_by=VALUES(updated_by)')->execute([$key,$value,$user['id']]);};
             foreach($groups[$group] as $key){
                 if(in_array($key,$checkbox,true))$value=!empty($_POST[$key])?'1':'0';
@@ -103,6 +187,10 @@ return function(PDO $db): void {
                 elseif($key==='complementary_roles'){$roles=array_values(array_intersect((array)($_POST['complementary_roles']??[]),['ADMIN','MANAGER','WAITER']));$value=implode(',',$roles);}
                 elseif(in_array($key,['discount_max_percent','discount_max_fixed','discount_approval_threshold_percent','discount_approval_threshold_fixed'],true)){$raw=trim((string)($_POST[$key]??''));$value=$raw===''?'':(string)Validator::money($raw,'amount');}
                 elseif($key==='default_table_status')$value=in_array($_POST[$key]??'',['AVAILABLE','RESERVED'],true)?$_POST[$key]:'AVAILABLE';
+                elseif($key==='printer_paper_width')$value=($_POST[$key]??'')==='58'?'58':'80';
+                elseif($key==='printer_agent_url'){$value=trim((string)($_POST[$key]??''));if($value!==''&&!filter_var($value,FILTER_VALIDATE_URL))throw new InvalidArgumentException('Printer agent address must be a valid URL, e.g. http://127.0.0.1:9123.');}
+                elseif($key==='printer_name')$value=Validator::text($_POST[$key]??'','printer name',150,false);
+                elseif($key==='printer_counter_id'){$raw=trim((string)($_POST[$key]??''));if($raw===''){$value='';}else{$cid=Validator::positiveInt($raw,'counter');$chk=$db->prepare('SELECT 1 FROM counters WHERE id=? AND active=1');$chk->execute([$cid]);if(!$chk->fetchColumn())throw new InvalidArgumentException('Invalid counter.');$value=(string)$cid;}}
                 elseif($key==='email'){$value=trim((string)($_POST[$key]??''));if($value!==''&&!filter_var($value,FILTER_VALIDATE_EMAIL))throw new InvalidArgumentException('Invalid email address.');}
                 elseif(in_array($key,['order_number_format','bill_number_format'],true)){$value=trim((string)($_POST[$key]??''));if($value===''||strpos($value,'{seq}')===false)throw new InvalidArgumentException('Number format must include {seq}, e.g. ORD-{seq}.');}
                 else $value=trim((string)($_POST[$key]??''));
@@ -126,6 +214,10 @@ return function(PDO $db): void {
                 'discount'=>['discount_enabled'=>'1','discount_allowed_types'=>'PERCENT,FIXED','discount_scope'=>'BOTH','discount_max_percent'=>'20','discount_max_fixed'=>'500','discount_approval_threshold_percent'=>'10','discount_approval_threshold_fixed'=>''],
                 'complementary'=>['complementary_enabled'=>'1','complementary_roles'=>'ADMIN,MANAGER','complementary_require_reason'=>'1'],
                 'system'=>['default_table_status'=>'AVAILABLE','confirm_cancel_order'=>'1','confirm_cancel_bill'=>'1','confirm_disable_user'=>'1'],
+                // auto_print defaults OFF: printing is only ever silent/automatic
+                // once an admin has confirmed the local agent actually reaches a
+                // real printer via Test Print — never on by default.
+                'printer'=>['printer_paper_width'=>'80','printer_auto_print'=>'0','printer_auto_cut'=>'1','printer_agent_url'=>'http://127.0.0.1:9123','printer_name'=>'','printer_counter_id'=>''],
             ];
             if(!isset($defaults[$group]))throw new InvalidArgumentException('Invalid settings group.');
             $save=function(string $key,string $value)use($db,$user){$db->prepare('INSERT INTO settings(setting_key,setting_value,updated_by)VALUES(?,?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),updated_by=VALUES(updated_by)')->execute([$key,$value,$user['id']]);};
@@ -166,6 +258,16 @@ return function(PDO $db): void {
         sort($images,SORT_NATURAL|SORT_FLAG_CASE);
         echo json_encode(['images'=>$images]); return;
     }
+    // Lets the browser that just created a print job (Test Print, or the
+    // post-payment auto-print) check on its own job's outcome. Ordinary
+    // session auth — this is the cashier's own browser, not a bridge — and
+    // deliberately returns status/error only, never the payload, so a
+    // receipt's bytes are never sent back over the wire a second time.
+    if(isset($_GET['job_status'])){
+        header('Content-Type: application/json'); header('Cache-Control: no-store');
+        $job=(new PrintJobService($db))->status(Validator::positiveInt($_GET['job_status']??null,'job'));
+        echo json_encode($job?:['status'=>'UNKNOWN']); return;
+    }
     // no-store on every authenticated page response: without it, a browser
     // may serve this exact document back out of its back/forward cache (or
     // regular HTTP cache) on a Back/Forward navigation with no server round
@@ -174,5 +276,5 @@ return function(PDO $db): void {
     // URL re-request it from the server, so a destroyed session is always
     // re-checked and correctly bounced to the login view.
     header('Cache-Control: no-store, no-cache, must-revalidate'); header('Pragma: no-cache');
-    $data=(new App\Services\PageDataService($db))->data($page,Auth::user(),$request); $boot=['page'=>$page,'user'=>Auth::user()+['permissions'=>Auth::permissions($db)],'csrf'=>Csrf::token(),'data'=>$data,'flash'=>['success'=>View::flash('success'),'error'=>View::flash('error'),'payment_success'=>View::flash('payment_success')]]; require dirname(__DIR__).'/resources/views/app.php';
+    $data=(new App\Services\PageDataService($db))->data($page,Auth::user(),$request); $boot=['page'=>$page,'user'=>Auth::user()+['permissions'=>Auth::permissions($db)],'csrf'=>Csrf::token(),'data'=>$data,'flash'=>['success'=>View::flash('success'),'error'=>View::flash('error'),'payment_success'=>View::flash('payment_success'),'bridge_token_created'=>View::flash('bridge_token_created')]]; require dirname(__DIR__).'/resources/views/app.php';
 };

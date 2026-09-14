@@ -1,0 +1,5 @@
+{
+  "port": 9123,
+  "allowedOrigin": "*",
+  "defaultPrinterShareName": ""
+}

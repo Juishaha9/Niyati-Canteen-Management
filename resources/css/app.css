@@ -523,6 +523,18 @@ tbody tr:hover{background:var(--bg)}
 .settings-card-icon.discount{background:linear-gradient(135deg,var(--primary),var(--purple));box-shadow:0 8px 18px rgba(75,95,238,.28)}
 .settings-card-icon.complementary{background:linear-gradient(135deg,var(--pink),var(--orange));box-shadow:0 8px 18px rgba(245,54,106,.28)}
 .settings-card-icon.system{background:linear-gradient(135deg,var(--c-indigo),var(--c-periwinkle));box-shadow:0 8px 18px rgba(72,91,189,.28)}
+.settings-card-icon.printer{background:linear-gradient(135deg,var(--c-teal),var(--blue));box-shadow:0 8px 18px rgba(1,179,147,.28)}
+.printer-status-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:12.5px;font-weight:700}
+.printer-status-pill.checking{background:var(--bg);color:var(--text-muted)}
+.printer-status-pill.ok{background:rgba(1,179,147,.12);color:var(--c-teal)}
+.printer-status-pill.down{background:rgba(220,38,38,.1);color:#dc2626}
+.printer-status-pill svg.spin{animation:spin .9s linear infinite}
+.printer-auto-print-alert{margin:0 0 16px}
+.bridge-token-reveal{display:flex;flex-direction:column;gap:6px}
+.bridge-token-value{background:var(--bg);border:1px dashed var(--border);border-radius:var(--radius-sm);padding:8px 10px;max-width:100%;box-sizing:border-box}
+.bridge-token-value code{font-family:'Courier New',monospace;font-size:12.5px;word-break:break-all;overflow-wrap:anywhere}
+.printer-legacy-agent{margin-top:18px;border-top:1px dashed var(--border);padding-top:14px}
+.printer-legacy-agent summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--text-muted)}
 .settings-card-head h2{margin:0;font-size:17px;font-weight:800;letter-spacing:-.01em}
 .settings-card-head p{margin:3px 0 0;font-size:12.5px;color:var(--text-muted);font-weight:600}
 .settings-section{margin-top:26px;padding-top:22px;border-top:1px solid var(--border)}
@@ -1176,6 +1188,11 @@ tbody tr:hover{background:var(--bg)}
    Xmm}` for that job. That measurement is only possible if these rules
    apply without needing @media print to already be active. */
 .print-bill{width:100%;max-width:80mm;margin:0 auto;padding:0 3mm;box-sizing:border-box;font-family:'Courier New',monospace;color:#000;font-size:12px}
+/* Settings > Printer > Paper width switches this at render time (see the
+   .print-bill className in OrderEditor, main.tsx) — everything else in this
+   block (columns, wrapping, content-driven height) applies unchanged at
+   either width. */
+.print-bill.paper-58{max-width:58mm;font-size:11px}
 .bill-head{text-align:center;margin-bottom:8px}
 .bill-logo{display:block;margin:0 auto 6px;max-height:52px;max-width:120px;object-fit:contain}
 .bill-head h2{margin:0 0 4px;font-size:16px;font-weight:700;letter-spacing:.5px}
@@ -1223,7 +1240,7 @@ tbody tr:hover{background:var(--bg)}
   html,body{height:auto!important;width:auto!important;overflow:visible!important}
   .app{display:block!important;min-height:0!important}
   .main{margin:0!important;width:100%!important;padding:0!important;max-width:none!important;min-height:0!important}
-  .sidebar,.topbar,.menu-area,.cart,.alert{display:none!important}
+  .sidebar,.topbar,.menu-area,.cart,.alert,.install-banner,#pwa-install-root{display:none!important}
   .order-layout{display:block!important}
   .reports-controls,.cancelled-card-btn,.view-full-btn{display:none!important}
   .surface,.metric,.table-widget{box-shadow:none!important;border:1px solid #ddd!important}
